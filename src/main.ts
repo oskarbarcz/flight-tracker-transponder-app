@@ -1,9 +1,12 @@
 import { loadConfig } from './config/config';
+import { envFilePaths, loadEnvFiles } from './config/env-file';
 import { Logger } from './core/logger';
 import { StatusRegistry } from './core/status';
 import { describeError, Supervisor } from './core/supervisor';
 import { FileTokenStore, SecretTokenStore } from './api/token-store';
+import { ConsolePrompt } from './platform/prompt';
 import { secretStoreFor } from './platform/secret-store';
+import { promptForSignIn } from './api/sign-in';
 import {
   FlightTrackerClient,
   NotSignedInError,
@@ -20,6 +23,8 @@ import { SimconnectSource } from './sim/simconnect.source';
 const SESSION_FILE = 'session.json';
 
 async function bootstrap(): Promise<void> {
+  loadEnvFiles(envFilePaths());
+
   const config = loadConfig();
   const logger = new Logger(config.logLevel, config.logFilePath);
   const status = new StatusRegistry();
@@ -59,13 +64,18 @@ async function bootstrap(): Promise<void> {
     logger.child('presence'),
   );
 
-  const email = process.env.FLIGHT_TRACKER_EMAIL;
-  const password = process.env.FLIGHT_TRACKER_PASSWORD;
-
-  if (email !== undefined && password !== undefined) {
-    await api.signIn(email, password).catch((error: unknown) => {
-      logger.error(`sign-in failed: ${describeError(error)}`);
-    });
+  if ((await tokenStore.read()) === null) {
+    if (process.stdin.isTTY) {
+      await promptForSignIn(
+        api,
+        new ConsolePrompt(process.stdin, process.stdout),
+        logger,
+      );
+    } else {
+      logger.warn(
+        'no stored session, and no console to ask the pilot to sign in',
+      );
+    }
   }
 
   await adsb.verifyToken().then(
@@ -177,7 +187,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-void bootstrap().catch((error: unknown) => {
-  process.stderr.write(`failed to start: ${describeError(error)}\n`);
-  process.exit(1);
-});
+if (process.argv.includes('--version')) {
+  process.stdout.write(`${process.env.APP_VERSION ?? 'dev'}\n`);
+} else {
+  void bootstrap().catch((error: unknown) => {
+    process.stderr.write(`failed to start: ${describeError(error)}\n`);
+    process.exit(1);
+  });
+}

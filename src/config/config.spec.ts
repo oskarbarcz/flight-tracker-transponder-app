@@ -1,4 +1,4 @@
-import { loadConfig, MissingConfigurationError } from './config';
+import { BUILT_IN, loadConfig } from './config';
 
 const minimal = {
   API_BASE_URL: 'https://flights.example.com',
@@ -7,7 +7,7 @@ const minimal = {
 };
 
 describe('loadConfig', () => {
-  it('reads the required keys and applies the defaults', () => {
+  it('reads the environment and applies the defaults', () => {
     const config = loadConfig(minimal);
 
     expect(config.apiBaseUrl).toBe('https://flights.example.com');
@@ -17,14 +17,37 @@ describe('loadConfig', () => {
     expect(config.logLevel).toBe('info');
   });
 
-  it.each(['API_BASE_URL', 'ADSB_BASE_URL', 'DISCORD_APPLICATION_ID'])(
-    'refuses to start without %s',
-    (key) => {
-      const env = { ...minimal, [key]: '' };
+  it('starts with nothing configured at all', () => {
+    const config = loadConfig({});
 
-      expect(() => loadConfig(env)).toThrow(MissingConfigurationError);
+    expect(config.apiBaseUrl).toBe(BUILT_IN.apiBaseUrl);
+    expect(config.adsbBaseUrl).toBe(BUILT_IN.adsbBaseUrl);
+    expect(config.discordApplicationId).toBe(BUILT_IN.discordApplicationId);
+  });
+
+  it.each([
+    ['API_BASE_URL', 'apiBaseUrl', BUILT_IN.apiBaseUrl],
+    ['ADSB_BASE_URL', 'adsbBaseUrl', BUILT_IN.adsbBaseUrl],
+    [
+      'DISCORD_APPLICATION_ID',
+      'discordApplicationId',
+      BUILT_IN.discordApplicationId,
+    ],
+  ] as const)(
+    'falls back to the built-in value when %s is blank',
+    (key, field, expected) => {
+      const config = loadConfig({ ...minimal, [key]: '   ' });
+
+      expect(config[field]).toBe(expected);
     },
   );
+
+  it('lets the environment override a built-in value', () => {
+    const config = loadConfig({ API_BASE_URL: 'https://staging.example.com' });
+
+    expect(config.apiBaseUrl).toBe('https://staging.example.com');
+    expect(config.adsbBaseUrl).toBe(BUILT_IN.adsbBaseUrl);
+  });
 
   it('trims a trailing slash off the base urls', () => {
     const config = loadConfig({

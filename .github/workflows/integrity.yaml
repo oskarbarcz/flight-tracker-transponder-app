@@ -59,15 +59,16 @@ jobs:
       - name: 'Smoke test the executable'
         shell: 'pwsh'
         run: |
-          $output = & ./dist/flight-tracker-transponder.exe 2>&1
+          $output = & ./dist/flight-tracker-transponder.exe --version 2>&1
           $code = $LASTEXITCODE
+          $expected = (Get-Content package.json | ConvertFrom-Json).version
 
-          if ($code -eq 0) {
-            throw "the executable should refuse to start with no configuration"
+          if ($code -ne 0) {
+            throw "--version exited with $code, output: $output"
           }
-          if ($output -notmatch 'API_BASE_URL') {
-            throw "expected the missing-configuration message, got: $output"
+          if ($output -notmatch [regex]::Escape($expected)) {
+            throw "expected version $expected, got: $output"
           }
 
-          Write-Host "the executable refuses to start and names the missing configuration"
+          Write-Host "smoke test passed: the executable reports $output"
           exit 0
