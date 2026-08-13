@@ -1,6 +1,6 @@
 {
   "name": "flight-tracker-transponder-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop companion feeding simulator positions to Flight Tracker and publishing Discord rich presence",
   "private": true,
   "main": "dist/main.js",
