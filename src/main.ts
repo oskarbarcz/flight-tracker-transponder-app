@@ -18,7 +18,7 @@ import { PositionQueue } from './domain/position-queue';
 import { RatePolicy } from './domain/rate-policy';
 import { PositionFeed } from './feeds/position.feed';
 import { PresenceFeed } from './feeds/presence.feed';
-import { SimconnectSource } from './sim/simconnect.source';
+import { PROTOCOL_NAMES, SimconnectSource } from './sim/simconnect.source';
 
 const SESSION_FILE = 'session.json';
 
@@ -106,10 +106,20 @@ async function bootstrap(): Promise<void> {
               status.setAircraftIdentifier(identifier),
             onClosed: () => resolve(),
           })
-          .then((application) => {
-            status.set('simulator', 'connected');
-            logger.info(`simulator connected: ${application}`);
-          }, resolve);
+          .then(
+            ({ application, protocol }) => {
+              status.set('simulator', 'connected');
+              logger.info(
+                `simulator connected: ${application} over ${PROTOCOL_NAMES[protocol] ?? protocol}`,
+              );
+            },
+            (error: unknown) => {
+              logger.warn(
+                `simulator connection failed: ${describeError(error)}`,
+              );
+              resolve();
+            },
+          );
       });
 
       signal.addEventListener('abort', () => source.disconnect(), {
