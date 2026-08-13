@@ -1,3 +1,4 @@
+import { access, constants } from 'node:fs/promises';
 import {
   open,
   Protocol,
@@ -40,23 +41,54 @@ export type SimconnectRemote = {
   port: number;
 };
 
+export type PipeProbe = (path: string) => Promise<boolean>;
+
+export const MSFS_PIPE = '\\\\.\\pipe\\Microsoft Flight Simulator\\SimConnect';
+
+export class SimulatorNotRunningError extends Error {
+  constructor() {
+    super('The simulator is not running: its SimConnect pipe is absent.');
+  }
+}
+
+async function pipeExists(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.F_OK);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const PROTOCOLS: Protocol[] = [Protocol.SunRise, Protocol.KittyHawk];
+
+export const PROTOCOL_NAMES: Record<number, string> = {
+  [Protocol.SunRise]: 'SunRise (MSFS 2024)',
+  [Protocol.KittyHawk]: 'KittyHawk (MSFS 2020)',
+};
+
+export type SimConnection = {
+  application: string;
+  protocol: Protocol;
+};
+
 export class SimconnectSource {
   private connection: SimConnectConnection | null = null;
   private aircraftIdentifier = '';
 
   constructor(
     private readonly remote: SimconnectRemote | null = null,
-    private readonly protocol: Protocol = Protocol.KittyHawk,
+    private readonly protocols: Protocol[] = PROTOCOLS,
+    private readonly probe: PipeProbe = pipeExists,
   ) {}
 
-  async connect(handlers: SimSourceHandlers): Promise<string> {
-    const { recvOpen, handle } =
-      this.remote === null
-        ? await open(CLIENT_NAME, this.protocol)
-        : await open(CLIENT_NAME, this.protocol, {
-            host: this.remote.host,
-            port: this.remote.port,
-          });
+  async connect(handlers: SimSourceHandlers): Promise<SimConnection> {
+    if (this.remote === null && !(await this.probe(MSFS_PIPE))) {
+      throw new SimulatorNotRunningError();
+    }
+
+    const { recvOpen, handle, protocol } = await this.openAny();
     this.connection = handle;
 
     for (const [name, unit, type] of VARIABLES) {
@@ -113,12 +145,41 @@ export class SimconnectSource {
       handlers.onClosed();
     });
 
-    return `${recvOpen.applicationName} ${recvOpen.applicationVersionMajor}.${recvOpen.applicationVersionMinor}`;
+    return {
+      application: `${recvOpen.applicationName} ${recvOpen.applicationVersionMajor}.${recvOpen.applicationVersionMinor}`,
+      protocol,
+    };
   }
 
   disconnect(): void {
     this.connection?.close();
     this.connection = null;
+  }
+
+  private async openAny(): Promise<{
+    recvOpen: Awaited<ReturnType<typeof open>>['recvOpen'];
+    handle: SimConnectConnection;
+    protocol: Protocol;
+  }> {
+    let lastError: unknown = new SimulatorNotRunningError();
+
+    for (const protocol of this.protocols) {
+      try {
+        const opened =
+          this.remote === null
+            ? await open(CLIENT_NAME, protocol)
+            : await open(CLIENT_NAME, protocol, {
+                host: this.remote.host,
+                port: this.remote.port,
+              });
+
+        return { ...opened, protocol };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError;
   }
 }
 
