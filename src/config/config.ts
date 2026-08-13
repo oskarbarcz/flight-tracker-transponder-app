@@ -18,6 +18,12 @@ export type Config = {
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+export const BUILT_IN = {
+  apiBaseUrl: 'https://api.flights.barcz.me',
+  adsbBaseUrl: 'https://adsb.barcz.me',
+  discordApplicationId: '1536756124894629970',
+};
+
 const DEFAULTS = {
   presencePollIntervalMs: 15_000,
   currentFlightPollIntervalMs: 30_000,
@@ -26,17 +32,16 @@ const DEFAULTS = {
   logLevel: 'info' as LogLevel,
 };
 
-export class MissingConfigurationError extends Error {
-  constructor(key: string) {
-    super(`Configuration key ${key} is required but was not provided.`);
-  }
-}
-
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
-    apiBaseUrl: trimTrailingSlash(required(env, 'API_BASE_URL')),
-    adsbBaseUrl: trimTrailingSlash(required(env, 'ADSB_BASE_URL')),
-    discordApplicationId: required(env, 'DISCORD_APPLICATION_ID'),
+    apiBaseUrl: trimTrailingSlash(text(env.API_BASE_URL, BUILT_IN.apiBaseUrl)),
+    adsbBaseUrl: trimTrailingSlash(
+      text(env.ADSB_BASE_URL, BUILT_IN.adsbBaseUrl),
+    ),
+    discordApplicationId: text(
+      env.DISCORD_APPLICATION_ID,
+      BUILT_IN.discordApplicationId,
+    ),
     simConnectRemote: simConnectRemote(env),
     presencePollIntervalMs: number(
       env.PRESENCE_POLL_INTERVAL_MS,
@@ -66,14 +71,10 @@ function simConnectRemote(env: NodeJS.ProcessEnv): SimConnectRemote | null {
   return { host, port: number(env.SIMCONNECT_PORT, 500) };
 }
 
-function required(env: NodeJS.ProcessEnv, key: string): string {
-  const value = env[key];
+function text(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim() ?? '';
 
-  if (value === undefined || value.trim() === '') {
-    throw new MissingConfigurationError(key);
-  }
-
-  return value.trim();
+  return trimmed === '' ? fallback : trimmed;
 }
 
 function number(value: string | undefined, fallback: number): number {
