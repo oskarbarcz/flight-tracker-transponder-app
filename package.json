@@ -1,8 +1,11 @@
 {
   "name": "flight-tracker-transponder-app",
   "version": "0.2.0",
-  "description": "Desktop companion feeding simulator positions to Flight Tracker and publishing Discord rich presence",
   "private": true,
+  "homepage": "https://flights.barcz.me",
+  "author": "oskarbarcz",
+  "license": "Unlicense",
+  "description": "Desktop companion feeding simulator positions to Flight Tracker and publishing Discord rich presence",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

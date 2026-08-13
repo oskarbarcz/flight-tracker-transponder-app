@@ -66,4 +66,4 @@ jobs:
           if ($output -notmatch 'API_BASE_URL') {
             throw "expected the missing-configuration message, got: $output"
           }
-          Write-Host "executable starts and reports its missing configuration"
+          Write-Host "the executable refuses to start and names the missing configuration"
