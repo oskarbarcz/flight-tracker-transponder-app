@@ -60,10 +60,14 @@ jobs:
         shell: 'pwsh'
         run: |
           $output = & ./dist/flight-tracker-transponder.exe 2>&1
-          if ($LASTEXITCODE -eq 0) {
+          $code = $LASTEXITCODE
+
+          if ($code -eq 0) {
             throw "the executable should refuse to start with no configuration"
           }
           if ($output -notmatch 'API_BASE_URL') {
             throw "expected the missing-configuration message, got: $output"
           }
+
           Write-Host "the executable refuses to start and names the missing configuration"
+          exit 0
