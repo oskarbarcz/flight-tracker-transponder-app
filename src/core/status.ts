@@ -1,0 +1,78 @@
+export type ConnectionName = 'simulator' | 'discord' | 'adsb' | 'api';
+
+export type ConnectionState =
+  | 'connected'
+  | 'disconnected'
+  | 'unauthorised'
+  | 'waiting-for-flight';
+
+export type StatusSnapshot = {
+  connections: Record<ConnectionName, ConnectionState>;
+  callsign: string | null;
+  aircraftIdentifier: string | null;
+  lastAcceptedReportAt: Date | null;
+  publishedCount: number;
+  droppedCount: number;
+};
+
+const CONNECTIONS: ConnectionName[] = ['simulator', 'discord', 'adsb', 'api'];
+
+export class StatusRegistry {
+  private readonly connections = new Map<ConnectionName, ConnectionState>(
+    CONNECTIONS.map((name) => [name, 'disconnected' as ConnectionState]),
+  );
+
+  private callsign: string | null = null;
+  private aircraftIdentifier: string | null = null;
+  private lastAcceptedReportAt: Date | null = null;
+  private publishedCount = 0;
+  private droppedCount = 0;
+
+  set(name: ConnectionName, state: ConnectionState): void {
+    this.connections.set(name, state);
+  }
+
+  setCallsign(callsign: string | null): void {
+    this.callsign = callsign;
+  }
+
+  setAircraftIdentifier(identifier: string | null): void {
+    this.aircraftIdentifier = identifier;
+  }
+
+  recordAcceptedReport(at: Date): void {
+    this.lastAcceptedReportAt = at;
+    this.publishedCount += 1;
+  }
+
+  setDroppedCount(count: number): void {
+    this.droppedCount = count;
+  }
+
+  snapshot(): StatusSnapshot {
+    return {
+      connections: Object.fromEntries(this.connections) as Record<
+        ConnectionName,
+        ConnectionState
+      >,
+      callsign: this.callsign,
+      aircraftIdentifier: this.aircraftIdentifier,
+      lastAcceptedReportAt: this.lastAcceptedReportAt,
+      publishedCount: this.publishedCount,
+      droppedCount: this.droppedCount,
+    };
+  }
+
+  describe(): string {
+    const snapshot = this.snapshot();
+    const connections = CONNECTIONS.map(
+      (name) => `${name}=${snapshot.connections[name]}`,
+    ).join(' ');
+
+    return (
+      `${connections} callsign=${snapshot.callsign ?? '-'} ` +
+      `aircraft=${snapshot.aircraftIdentifier ?? '-'} ` +
+      `published=${snapshot.publishedCount} dropped=${snapshot.droppedCount}`
+    );
+  }
+}

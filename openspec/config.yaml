@@ -1,0 +1,61 @@
+schema: spec-driven
+
+context: |
+  Flight Tracker desktop companion — a headless Node service with a Windows tray icon that
+  runs on the pilot's PC next to Microsoft Flight Simulator 2024.
+
+  It does two things:
+  1. Position feed. Reads the simulated aircraft over SimConnect (node-simconnect, pure
+     TypeScript, no SDK) and publishes position reports to the ADS-B service at
+     adsb.barcz.me (POST /api/v1/position, bearer JWT). flight-tracker-api polls that
+     service by callsign, so this replaces the unmaintainable C# transponder.
+  2. Discord rich presence. Polls GET /api/v1/user/me/discord-presence on
+     flight-tracker-api and mirrors it into the local Discord client over IPC. Discord has
+     no server-side API for writing a user's activity, so this must run locally.
+
+  Tech stack: TypeScript, Node, node-simconnect, a Discord RPC client, single-file Windows
+  executable. No Electron, no Tauri, no renderer — the web frontend stays the product
+  surface.
+
+  Conventions: strict TypeScript, Biome for linting and formatting (not ESLint/Prettier),
+  colocated `*.spec.ts` Jest tests, no code comments (rationale belongs in docs and specs),
+  behaviour covered by tests rather than described in prose. CI runs Biome + typecheck +
+  tests on every push, and builds the Windows executable on merge to main.
+
+  Hard constraints worth remembering:
+  - Callsigns must match flight-tracker-api's normalisation (whitespace removed, upper
+    case) or the published track is invisible to it. The callsign comes from the API's
+    current flight, never from the simulator's ATC ID.
+  - The simulator's transponder value is BCD: 0x1200 means squawk 1200.
+  - Windows only. The sim runs on Windows and Discord IPC must be on the same machine.
+
+# Per-artifact rules (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
