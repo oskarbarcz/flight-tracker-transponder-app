@@ -28,7 +28,7 @@ jobs:
       - name: 'Set up Node'
         uses: 'actions/setup-node@v4'
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
       - name: 'Install dependencies'
         run: 'npm ci'
@@ -46,7 +46,7 @@ jobs:
       - name: 'Set up Node'
         uses: 'actions/setup-node@v4'
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
       - name: 'Set up Bun'
         uses: 'oven-sh/setup-bun@v2'
@@ -58,17 +58,7 @@ jobs:
         run: 'npm run build:exe'
       - name: 'Smoke test the executable'
         shell: 'pwsh'
-        run: |
-          $output = & ./dist/flight-tracker-transponder.exe --version 2>&1
-          $code = $LASTEXITCODE
-          $expected = (Get-Content package.json | ConvertFrom-Json).version
-
-          if ($code -ne 0) {
-            throw "--version exited with $code, output: $output"
-          }
-          if ($output -notmatch [regex]::Escape($expected)) {
-            throw "expected version $expected, got: $output"
-          }
-
-          Write-Host "smoke test passed: the executable reports $output"
-          exit 0
+        run: './scripts/smoke-test.ps1'
+      - name: 'Check the executable carries the icon and properties'
+        shell: 'pwsh'
+        run: './scripts/check-icon.ps1'

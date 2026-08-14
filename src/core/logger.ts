@@ -22,15 +22,22 @@ export function redact(message: string): string {
   );
 }
 
+export type LogSink = (line: string) => void;
+
+export const streamSink: LogSink = (line) => {
+  process.stdout.write(`${line}\n`);
+};
+
 export class Logger {
   constructor(
     private readonly level: LogLevel,
     private readonly filePath: string,
     private readonly scope = 'app',
+    private readonly sink: LogSink = streamSink,
   ) {}
 
   child(scope: string): Logger {
-    return new Logger(this.level, this.filePath, scope);
+    return new Logger(this.level, this.filePath, scope, this.sink);
   }
 
   debug(message: string): void {
@@ -56,7 +63,7 @@ export class Logger {
 
     const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${this.scope}] ${redact(message)}`;
 
-    process.stdout.write(`${line}\n`);
+    this.sink(line);
     this.appendToFile(line);
   }
 

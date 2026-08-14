@@ -13,6 +13,8 @@ export type StatusSnapshot = {
   lastAcceptedReportAt: Date | null;
   publishedCount: number;
   droppedCount: number;
+  presenceState: string | null;
+  presenceDetails: string | null;
 };
 
 const CONNECTIONS: ConnectionName[] = ['simulator', 'discord', 'adsb', 'api'];
@@ -27,6 +29,8 @@ export class StatusRegistry {
   private lastAcceptedReportAt: Date | null = null;
   private publishedCount = 0;
   private droppedCount = 0;
+  private presenceState: string | null = null;
+  private presenceDetails: string | null = null;
 
   set(name: ConnectionName, state: ConnectionState): void {
     this.connections.set(name, state);
@@ -49,6 +53,11 @@ export class StatusRegistry {
     this.droppedCount = count;
   }
 
+  setPresence(state: string | null, details: string | null): void {
+    this.presenceState = state;
+    this.presenceDetails = details;
+  }
+
   snapshot(): StatusSnapshot {
     return {
       connections: Object.fromEntries(this.connections) as Record<
@@ -60,6 +69,8 @@ export class StatusRegistry {
       lastAcceptedReportAt: this.lastAcceptedReportAt,
       publishedCount: this.publishedCount,
       droppedCount: this.droppedCount,
+      presenceState: this.presenceState,
+      presenceDetails: this.presenceDetails,
     };
   }
 

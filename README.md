@@ -17,12 +17,13 @@ executable; the tray, autostart and a real flight are not. See
 `openspec/changes/bootstrap-desktop-companion/tasks.md` for exactly what is checked off.
 
 ```bash
-npm install
-npm test           # 127 unit and integration tests
+npm install        # needs Node 26
+npm test           # 175 unit and integration tests
 npm run lint       # biome check
 npm run lint:fix   # biome check --write
 npm start          # needs the environment in .env.example
 npm run build:exe  # single Windows executable (needs bun)
+npm run build:icon # regenerate assets/icon.ico from the svg (macOS only)
 ```
 
 `integrity` runs Biome, the typecheck and the tests on every pull request, and compiles the

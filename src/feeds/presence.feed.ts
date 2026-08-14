@@ -57,6 +57,7 @@ export class PresenceFeed {
 
     await this.writer.setActivity(activity);
     this.lastPublished = fingerprint;
+    this.status.setPresence(payload.state, payload.details);
     this.logger.info(`activity published: ${activity.state}`);
   }
 
@@ -67,6 +68,7 @@ export class PresenceFeed {
 
     await this.writer.clearActivity();
     this.lastPublished = null;
+    this.status.setPresence(null, null);
     this.logger.info('activity cleared');
   }
 
