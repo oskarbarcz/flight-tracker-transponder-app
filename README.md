@@ -113,18 +113,42 @@ The callsign comes from the API's current flight and never from the simulator's 
 no flight started you will see `no current flight, publishing suspended` and an empty
 `callsign=-` no matter how healthy SimConnect looks. Start the flight in the web app first.
 
+### The three sections
+
+The dashboard is three boxes. **1 TRANSPONDER** is the position feed: the SimConnect
+connection, what the ADS-B side of it is doing, the callsign it publishes under next to the
+aircraft the simulator reports, and how much has gone out. **2 DISCORD** is the local IPC
+socket and the activity currently published. **3 SERVICES** is what is on the other end and
+what it is running:
+
+```
+┌─ 3 SERVICES ─────────────────────────────────────────────────────────────────┐
+│ flight-tracker ● connected          v3.24.0                                  │
+│ adsb           ● connected          v0.5.0                                   │
+│ transponder    ● running            v0.7.0                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Both versions are read without a token — the ADS-B service states one on `GET /`, and the API,
+which publishes no status route at all, states one in the `info` block of its OpenAPI document.
+That matters: the row still tells you what is deployed at the far end when the session or the
+client token is the very thing that is broken. A version that could not be read shows as `—`
+and stops nothing. Neither is polled often, because neither changes except on a deploy, and the
+API's document costs a quarter of a megabyte to read — `VERSION_POLL_INTERVAL_MS` sets the
+interval, fifteen minutes by default.
+
 ### The keys
 
-There is no tray icon yet, so the console window is the whole interface and closing it stops the
-app. Everything it can be asked to do is one letter, listed along the bottom of the frame:
+There is no tray icon yet, so the console window is the whole interface, and closing it — or
+Ctrl-C — stops the app. Everything it can be *asked* to do is one letter, listed along the
+bottom of the frame:
 
 | Key | What it does |
 | --- | --- |
 | `s` | Sign in. Asks for the email, then the password, masked. The outcome opens the log pane rather than being written somewhere nobody is looking. |
-| `c` | Set a callsign by hand, publishing without a Flight Tracker flight. Empty follows the current flight again. A callsign the service would refuse is turned away here with a reason rather than as a 400 per second. |
+| `c` | Set a callsign by hand, publishing without a Flight Tracker flight. Empty follows the current flight again. A callsign the service would refuse is turned away here with a reason rather than as a 400 on every report. |
 | `t` | Switch transmission off and on. Off reads as `standby`, and the tab says so too — nothing is published and nothing is queued for later. It starts on, so a flight that never touches it behaves as it always did. |
 | `l` | Show or hide the log pane. |
-| `ctrl-c` | Quit. |
 
 Transmission being a switch matters most with `c`: setting a callsign by hand used to start
 broadcasting your position on the spot with no way to stop it short of quitting.
@@ -157,6 +181,26 @@ address. Unset means the local pipe, which is what ships to pilots.
 
 **Discord, locally.** The IPC client resolves macOS socket paths, so the activity is written to
 the Mac's own Discord client and can be looked at there.
+
+**Looking at what was published.** `index.html` draws a callsign's track on a map, straight from
+the ADS-B service. Serve it rather than opening the file:
+
+```bash
+ADSB_CLIENT_TOKEN=… npm run preview   # or put the token in .env
+```
+
+Then open `http://127.0.0.1:4173`. Opening `index.html` from the filesystem does not work, and
+no amount of editing the page will make it: the service answers
+`access-control-allow-origin: https://flights.barcz.me` and nothing else, so the browser refuses
+to hand the response back to a page on any other origin — the request itself succeeds, which is
+what makes it confusing to debug. `bin/preview.mjs` sidesteps the whole question instead of
+fighting it. It serves the page and forwards `/api` to the service, so page and data share an
+origin and the same-origin policy never applies. Nothing has to be disabled in the browser.
+
+It also means the token stays in that process. It reads it from the environment or `.env` and
+attaches it on the way out, so it never has to be typed into a page that lives in this public
+repository. The proxy binds to loopback only, for the same reason: every request it forwards
+carries that token.
 
 **What still needs a Windows pass:** pipe-based SimConnect discovery, the tray, registry
 autostart, DPAPI credential storage, the packaged executable, and flying a real flight. These

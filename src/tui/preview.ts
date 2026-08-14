@@ -17,6 +17,11 @@ export function previewFrame(version: string): string {
   status.set('adsb', 'unauthorised');
   status.set('discord', 'disconnected');
 
+  // One known and one not, so section 3 draws both a version and the dash that
+  // stands in for one that could not be read.
+  status.setServiceVersion('api', '3.24.0');
+  status.setServiceVersion('adsb', null);
+
   status.setCallsign('SP-LOT');
   status.setAircraftIdentifier('A320');
   status.setPresence('Boarding', 'EPWA -> EDDF');

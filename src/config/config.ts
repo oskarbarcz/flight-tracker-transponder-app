@@ -10,6 +10,7 @@ export type Config = {
   simConnectRemote: SimConnectRemote | null;
   presencePollIntervalMs: number;
   currentFlightPollIntervalMs: number;
+  versionPollIntervalMs: number;
   simSampleIntervalMs: number;
   queueCapacity: number;
   logLevel: LogLevel;
@@ -27,6 +28,9 @@ export const BUILT_IN = {
 const DEFAULTS = {
   presencePollIntervalMs: 15_000,
   currentFlightPollIntervalMs: 30_000,
+  // A version only changes when someone deploys, and reading the API's is a
+  // quarter of a megabyte, so this is deliberately slow.
+  versionPollIntervalMs: 15 * 60_000,
   simSampleIntervalMs: 1_000,
   queueCapacity: 3_600,
   logLevel: 'info' as LogLevel,
@@ -50,6 +54,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     currentFlightPollIntervalMs: number(
       env.CURRENT_FLIGHT_POLL_INTERVAL_MS,
       DEFAULTS.currentFlightPollIntervalMs,
+    ),
+    versionPollIntervalMs: number(
+      env.VERSION_POLL_INTERVAL_MS,
+      DEFAULTS.versionPollIntervalMs,
     ),
     simSampleIntervalMs: number(
       env.SIM_SAMPLE_INTERVAL_MS,

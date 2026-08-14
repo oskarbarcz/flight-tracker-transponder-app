@@ -23,9 +23,12 @@ if (token === '') {
 }
 
 // Stamping the icon and the properties into the PE goes through Windows
-// APIs, so bun refuses both when cross-compiling. Release builds run on a
-// Windows runner and get them; a build from a developer's Mac is otherwise
-// identical, just anonymous.
+// APIs, so bun cannot do either when cross-compiling. It does not say so: the
+// build reports success and the executable keeps bun's own steamed-bun logo
+// and bun's own version block. Release builds run on a Windows runner and get
+// ours; a build from a developer's Mac is otherwise identical, but it is
+// bun-branded rather than merely anonymous, which is worth knowing before
+// wondering why a locally built exe looks wrong.
 const onWindows = process.platform === 'win32';
 
 if (!onWindows) {

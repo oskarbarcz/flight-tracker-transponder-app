@@ -38,7 +38,13 @@ type Harness = {
   advance: (ms: number) => void;
 };
 
-function harness(capacity = 10): Harness {
+function harness(
+  capacity = 10,
+  // Every sample publishes by default: these tests are about the queue and the
+  // retries, not about how often a report is due. One test wants the real
+  // cadence and passes it.
+  policy: RatePolicy = new RatePolicy(1),
+): Harness {
   const published: PositionReport[] = [];
   let failure: Error | null = null;
   let attempts = 0;
@@ -63,7 +69,7 @@ function harness(capacity = 10): Harness {
     feed: new PositionFeed(
       adsb,
       queue,
-      new RatePolicy(),
+      policy,
       status,
       new Logger('error', '/dev/null'),
       () => clock,
@@ -345,6 +351,30 @@ describe('PositionFeed', () => {
     const { feed } = harness();
 
     expect(feed.isTransmitting).toBe(true);
+  });
+
+  // The cadence the pilot actually sees, driven by the real policy rather than
+  // the every-sample one the rest of these tests use: sixty seconds of a
+  // one-hertz simulator is six reports, ten seconds apart.
+  it('publishes one report every ten seconds of simulator time', async () => {
+    const { feed, published } = harness(10, new RatePolicy());
+    feed.setCurrentFlightCallsign('LH455');
+
+    for (let second = 0; second < 60; second += 1) {
+      feed.accept(
+        sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, second)) }),
+      );
+      await feed.drain();
+    }
+
+    expect(published.map((report) => report.date)).toEqual([
+      '2026-08-13T12:00:00.000Z',
+      '2026-08-13T12:00:10.000Z',
+      '2026-08-13T12:00:20.000Z',
+      '2026-08-13T12:00:30.000Z',
+      '2026-08-13T12:00:40.000Z',
+      '2026-08-13T12:00:50.000Z',
+    ]);
   });
 
   it('counts accepted reports for the status view', async () => {

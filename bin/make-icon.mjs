@@ -17,7 +17,26 @@ import { join } from 'node:path';
 
 const SOURCE = 'assets/icon.svg';
 const OUTFILE = 'assets/icon.ico';
-const SIZES = [16, 32, 48, 64, 128, 256];
+
+// Largest first, and that order is load-bearing rather than cosmetic.
+//
+// Bun stamps the icon by writing each frame of this file as `RT_ICON` 1, 2, 3…
+// in the order it finds them, and building an `RT_GROUP_ICON` that names them
+// all. What it does not do is delete the group it shipped with: its own
+// `IDI_MYICON` survives in the executable, still saying "I am one 256x256
+// icon and my image is resource id 1". Because the PE format sorts named
+// resources ahead of numbered ones, that stale group is the first one Windows
+// finds, and it is the one the taskbar and Explorer resolve the app icon
+// through — so whatever lands at id 1 is the icon, whatever the group we
+// supply says.
+//
+// Ascending order put the 16px frame at id 1. Windows read 16x16 pixels out of
+// a slot labelled 256x256: pixelated everywhere it was scaled up, and blank in
+// the views that ask for a large icon. Descending order puts the 256px frame
+// there instead, which is the one size that degrades gracefully into all the
+// others. scripts/check-icon.ps1 asserts the result, because nothing else
+// would notice it regressing.
+const SIZES = [256, 128, 64, 48, 32, 16];
 
 const PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 

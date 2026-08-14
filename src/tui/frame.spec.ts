@@ -118,11 +118,16 @@ describe('renderFrame', () => {
     expect(lines).not.toContain('line-0 ');
   });
 
-  it('tells the pilot how to reach the logs and how to quit', () => {
+  it('tells the pilot how to reach the logs and what the keys do', () => {
     expect(frame(80).join('\n')).toContain(
-      's sign in · c callsign · t standby · l show logs · ctrl-c quit',
+      's sign in · c callsign · t standby · l show logs',
     );
     expect(frame(80, undefined, [], true).join('\n')).toContain('l hide logs');
+  });
+
+  it('does not offer quitting as a key to learn', () => {
+    expect(frame(80).join('\n')).not.toContain('ctrl-c');
+    expect(frame(80).join('\n')).not.toContain('quit');
   });
 
   // Losing the session used to leave `api ! unauthorised` on screen with
@@ -155,6 +160,66 @@ describe('renderFrame', () => {
     } finally {
       delete process.env.NO_COLOR;
     }
+  });
+
+  it('reports both services and this app, each with its version', () => {
+    process.env.NO_COLOR = '1';
+
+    try {
+      const lines = frame(80, (status) => {
+        status.set('api', 'connected');
+        status.set('adsb', 'connected');
+        status.setServiceVersion('api', '3.24.0');
+        status.setServiceVersion('adsb', '0.5.0');
+      }).join('\n');
+
+      expect(lines).toContain('3 SERVICES');
+      expect(lines).toContain('flight-tracker ● connected          v3.24.0');
+      expect(lines).toContain('adsb           ● connected          v0.5.0');
+      expect(lines).toContain('transponder    ● running            v0.3.0');
+    } finally {
+      delete process.env.NO_COLOR;
+    }
+  });
+
+  // A version is read over the network and the row has to exist before it
+  // arrives, so the unknown case is the one that renders on every first frame.
+  it('stands a dash in for a version it could not read', () => {
+    process.env.NO_COLOR = '1';
+
+    try {
+      const lines = frame(80).join('\n');
+
+      expect(lines).toContain('flight-tracker ○ disconnected       —');
+      expect(lines).toContain('adsb           ○ disconnected       —');
+    } finally {
+      delete process.env.NO_COLOR;
+    }
+  });
+
+  it('states this app as running, whatever the services are doing', () => {
+    process.env.NO_COLOR = '1';
+
+    try {
+      const lines = frame(80, (status) => {
+        status.set('api', 'unauthorised');
+        status.set('adsb', 'unauthorised');
+      }).join('\n');
+
+      expect(lines).toContain('transponder    ● running');
+    } finally {
+      delete process.env.NO_COLOR;
+    }
+  });
+
+  // The line it replaces: `api ● connected` used to sit on its own above the
+  // boxes, saying exactly what section 3 now says with a version beside it.
+  it('does not also state the api on a line of its own', () => {
+    const lines = frame(80, (status) => status.set('api', 'connected')).join(
+      '\n',
+    );
+
+    expect(lines).not.toMatch(/^ {2}api /m);
   });
 
   it('survives an absurdly narrow terminal', () => {
