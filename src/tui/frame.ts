@@ -31,6 +31,7 @@ const MARKERS: Record<ConnectionState, string> = {
   disconnected: '○',
   unauthorised: '!',
   'waiting-for-flight': '~',
+  standby: '◌',
 };
 
 // Kept apart from the glyphs so the colour is chosen per render rather than
@@ -40,15 +41,17 @@ const MARKER_COLOURS: Record<ConnectionState, Style> = {
   disconnected: red,
   unauthorised: amber,
   'waiting-for-flight': cyan,
+  standby: dim,
 };
 
-function marker(state: ConnectionState): string {
+export function marker(state: ConnectionState): string {
   return MARKER_COLOURS[state](MARKERS[state]);
 }
 
 export type FramePrompt = {
   label: string;
   value: string;
+  hint: string;
 };
 
 export type FrameInput = {
@@ -83,7 +86,9 @@ export function renderFrame(input: FrameInput): string[] {
 
   lines.push(
     indent(
-      input.prompt === null ? hint(input.showLogs) : promptLine(input.prompt),
+      input.prompt === null
+        ? hint(input.showLogs, status.connections.adsb === 'standby')
+        : promptLine(input.prompt),
       width,
     ),
   );
@@ -105,6 +110,12 @@ export function renderTitle(status: StatusSnapshot): string {
     return `${broken} ${status.connections[broken]} · ${TITLE_SUFFIX}`;
   }
 
+  // Ahead of the callsign, because a pilot who left the switch off and went
+  // flying wants to learn that from the tab rather than from an empty track.
+  if (status.connections.adsb === 'standby') {
+    return `standby · ${TITLE_SUFFIX}`;
+  }
+
   if (status.callsign === null) {
     return `no flight · ${TITLE_SUFFIX}`;
   }
@@ -113,10 +124,7 @@ export function renderTitle(status: StatusSnapshot): string {
 }
 
 function promptLine(prompt: FramePrompt): string {
-  return (
-    `${prompt.label} › ${bold(prompt.value)}${cyan('█')}  ` +
-    dim('enter to set · empty follows the flight · esc cancels')
-  );
+  return `${prompt.label} › ${bold(prompt.value)}${cyan('█')}  ${dim(prompt.hint)}`;
 }
 
 function wordmark(width: number, version: string): string {
@@ -206,8 +214,14 @@ function logPane(logs: string[], width: number): string[] {
   ];
 }
 
-function hint(showLogs: boolean): string {
-  return dim(`c callsign · l ${showLogs ? 'hide' : 'show'} logs · ctrl-c quit`);
+// Every recovery the pilot has is a single letter, so every letter is on the
+// screen: an app that reports `api ! unauthorised` and keeps the way back in
+// to itself is the same as having no way back in.
+function hint(showLogs: boolean, standby: boolean): string {
+  return dim(
+    `s sign in · c callsign · t ${standby ? 'transmit' : 'standby'} · ` +
+      `l ${showLogs ? 'hide' : 'show'} logs · ctrl-c quit`,
+  );
 }
 
 function indent(text: string, width: number): string {

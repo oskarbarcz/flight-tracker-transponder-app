@@ -2,6 +2,7 @@ import { PositionFeed } from './position.feed';
 import {
   type AdsbClient,
   AdsbPublishFailedError,
+  AdsbReportRejectedError,
   AdsbTokenRejectedError,
 } from '../adsb/adsb.client';
 import { PositionQueue } from '../domain/position-queue';
@@ -219,6 +220,131 @@ describe('PositionFeed', () => {
     await feed.drain();
 
     expect(published).toHaveLength(2);
+  });
+
+  // What the pilot actually saw: `sent 0 dropped 0`, the backoff doubling to
+  // 30 seconds, and one report the service would never accept sitting at the
+  // head of the queue with the whole flight behind it.
+  it('drops a report the service refuses rather than wedging the queue', async () => {
+    const { feed, published, queue, status, failWith } = harness();
+    feed.setCurrentFlightCallsign('LH455');
+
+    failWith(new AdsbReportRejectedError(400, 'squawk must be a string'));
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 0)) }),
+    );
+    await feed.drain();
+
+    expect(queue.size).toBe(0);
+    expect(status.snapshot().droppedCount).toBe(1);
+
+    // The next report is not held behind the refused one.
+    failWith(null);
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 1)) }),
+    );
+    await feed.drain();
+
+    expect(published.map((report) => report.date)).toEqual([
+      '2026-08-13T12:00:01.000Z',
+    ]);
+  });
+
+  it('does not back off on a refusal, since the next report may be fine', async () => {
+    const { feed, attempts, failWith } = harness();
+    feed.setCurrentFlightCallsign('LH455');
+    failWith(new AdsbReportRejectedError(400, 'squawk must be a string'));
+
+    for (let second = 0; second < 4; second += 1) {
+      feed.accept(
+        sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, second)) }),
+      );
+      await feed.drain();
+    }
+
+    expect(attempts()).toBe(4);
+  });
+
+  it('leaves the connection alone when it was the payload that was refused', async () => {
+    const { feed, status, failWith } = harness();
+    feed.setCurrentFlightCallsign('LH455');
+    failWith(new AdsbReportRejectedError(400, 'squawk must be a string'));
+
+    feed.accept(sample());
+    await feed.drain();
+
+    expect(status.snapshot().connections.adsb).not.toBe('disconnected');
+  });
+
+  it('holds everything back while transmission is switched off', async () => {
+    const { feed, published, queue, status } = harness();
+    feed.setCurrentFlightCallsign('LH455');
+
+    feed.setTransmitting(false);
+    feed.accept(sample());
+    await feed.drain();
+
+    expect(published).toHaveLength(0);
+    expect(queue.size).toBe(0);
+    expect(status.snapshot().connections.adsb).toBe('standby');
+  });
+
+  it('abandons what was queued rather than backfilling the gap on the way back', async () => {
+    const { feed, published, failWith, advance } = harness();
+    feed.setCurrentFlightCallsign('LH455');
+
+    failWith(new AdsbPublishFailedError(503));
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 0)) }),
+    );
+    await feed.drain();
+
+    feed.setTransmitting(false);
+    failWith(null);
+    advance(60_000);
+    await feed.drain();
+
+    feed.setTransmitting(true);
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 5, 0)) }),
+    );
+    await feed.drain();
+
+    expect(published.map((report) => report.date)).toEqual([
+      '2026-08-13T12:05:00.000Z',
+    ]);
+  });
+
+  it('goes back to whatever it was doing when transmission returns', () => {
+    const { feed, status } = harness();
+
+    feed.setCurrentFlightCallsign('LH455');
+    feed.setTransmitting(false);
+    feed.setTransmitting(true);
+
+    expect(status.snapshot().connections.adsb).toBe('connected');
+
+    feed.setCurrentFlightCallsign(null);
+    feed.setTransmitting(false);
+    feed.setTransmitting(true);
+
+    expect(status.snapshot().connections.adsb).toBe('waiting-for-flight');
+  });
+
+  it('keeps standby through a flight change rather than losing the switch', () => {
+    const { feed, status } = harness();
+    feed.setTransmitting(false);
+
+    feed.setCurrentFlightCallsign('LH455');
+
+    expect(status.snapshot().connections.adsb).toBe('standby');
+    expect(feed.isTransmitting).toBe(false);
+  });
+
+  it('transmits by default, so a flight that never asks behaves as before', () => {
+    const { feed } = harness();
+
+    expect(feed.isTransmitting).toBe(true);
   });
 
   it('counts accepted reports for the status view', async () => {

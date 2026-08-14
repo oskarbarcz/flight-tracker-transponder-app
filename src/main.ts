@@ -18,6 +18,7 @@ import {
 } from './api/flight-tracker.client';
 import { AdsbClient, AdsbTokenRejectedError } from './adsb/adsb.client';
 import { IpcPresenceWriter } from './discord/ipc-presence.writer';
+import { isPlausibleCallsign } from './domain/callsign';
 import { PositionQueue } from './domain/position-queue';
 import { RatePolicy } from './domain/rate-policy';
 import { PositionFeed } from './feeds/position.feed';
@@ -86,11 +87,17 @@ async function bootstrap(): Promise<void> {
 
   if ((await tokenStore.read()) === null) {
     if (process.stdin.isTTY) {
-      await promptForSignIn(
+      const signedIn = await promptForSignIn(
         api,
         new ConsolePrompt(process.stdin, process.stdout),
         logger,
       );
+
+      if (!signedIn) {
+        // The dashboard is about to clear the screen over whatever went wrong
+        // here, so the way back in is worth naming before it does.
+        logger.warn('not signed in: press s on the dashboard to try again');
+      }
     } else {
       logger.warn(
         'no stored session, and no console to ask the pilot to sign in',
@@ -120,6 +127,17 @@ async function bootstrap(): Promise<void> {
   };
 
   const overrideCallsign = (callsign: string | null): void => {
+    // Checked here rather than discovered as a 400 per second: the API's own
+    // callsigns are taken as given, but a hand-typed one is a typo waiting to
+    // stall the queue behind a report the service will never accept.
+    if (callsign !== null && !isPlausibleCallsign(callsign)) {
+      logger.warn(
+        `${callsign} is not a callsign the ADS-B service will accept: two to twelve letters, digits or hyphens`,
+      );
+
+      return;
+    }
+
     callsignOverride = callsign;
     positionFeed.setCurrentFlightCallsign(callsign);
 
@@ -128,6 +146,25 @@ async function bootstrap(): Promise<void> {
         ? 'callsign override released: following the current flight again'
         : `callsign overridden to ${callsign}: publishing without a Flight Tracker flight`,
     );
+  };
+
+  const pollCurrentFlight = async (): Promise<void> => {
+    try {
+      const flight = await api.getCurrentFlight();
+      applyCallsign(flight?.callsign ?? null);
+      status.set('api', 'connected');
+    } catch (error) {
+      if (
+        error instanceof SessionExpiredError ||
+        error instanceof NotSignedInError
+      ) {
+        status.set('api', 'unauthorised');
+        applyCallsign(null);
+      } else {
+        status.set('api', 'disconnected');
+        logger.warn(`current flight poll failed: ${describeError(error)}`);
+      }
+    }
   };
 
   const dashboard =
@@ -140,6 +177,31 @@ async function bootstrap(): Promise<void> {
           process.stdin,
         )
       : null;
+
+  // Signing in is the one thing a pilot can do that the app cannot do for
+  // itself, so it is reachable for as long as the app is running rather than
+  // only in the seconds before the dashboard takes the console.
+  const signIn = (email: string, password: string): void => {
+    void api.signIn(email, password).then(
+      async () => {
+        logger.info(`signed in as ${email}`);
+        status.set('api', 'connected');
+        dashboard?.revealLogs();
+        // Without this the pilot waits out the poll interval wondering whether
+        // anything happened.
+        await pollCurrentFlight();
+      },
+      (error: unknown) => {
+        status.set('api', 'unauthorised');
+        logger.error(`sign-in failed: ${describeError(error)}`);
+        dashboard?.revealLogs();
+      },
+    );
+  };
+
+  const toggleTransmitting = (): void => {
+    positionFeed.setTransmitting(!positionFeed.isTransmitting);
+  };
 
   let stopping = false;
   const shutdown = async (): Promise<void> => {
@@ -165,6 +227,8 @@ async function bootstrap(): Promise<void> {
     dashboard.start({
       onQuit: () => void shutdown(),
       onCallsign: overrideCallsign,
+      onSignIn: signIn,
+      onTransmit: toggleTransmitting,
     });
     process.stdout.on('resize', () => dashboard.resize());
   }
@@ -213,23 +277,7 @@ async function bootstrap(): Promise<void> {
     name: 'current-flight',
     run: async (signal) => {
       while (!signal.aborted) {
-        try {
-          const flight = await api.getCurrentFlight();
-          applyCallsign(flight?.callsign ?? null);
-          status.set('api', 'connected');
-        } catch (error) {
-          if (
-            error instanceof SessionExpiredError ||
-            error instanceof NotSignedInError
-          ) {
-            status.set('api', 'unauthorised');
-            applyCallsign(null);
-          } else {
-            status.set('api', 'disconnected');
-            logger.warn(`current flight poll failed: ${describeError(error)}`);
-          }
-        }
-
+        await pollCurrentFlight();
         await sleep(config.currentFlightPollIntervalMs);
       }
     },

@@ -77,8 +77,10 @@ Password: *******
 The password is masked as it is typed, is never logged and never reaches the disk. What is kept
 is the refresh token, stored through DPAPI on Windows and the login keychain on macOS, so this
 is asked once and not again until that session is revoked or expires. Three rejected attempts
-leave the app running with `api=unauthorised`; Ctrl-C at the prompt skips sign-in with the same
-result. Either way, restarting is what asks again.
+leave the app running with `api=unauthorised`, and so does Ctrl-C at the prompt — **press `s` on
+the dashboard to be asked again**, without restarting. The same key is the way back in when a
+session is revoked or expires hours into a flight, which is the case a restart used to be the
+only answer to.
 
 ### The two tokens
 
@@ -99,10 +101,11 @@ Once a minute the app reports where it stands:
 simulator=connected discord=connected adsb=connected api=connected callsign=SP123 aircraft=A320 published=42 dropped=0
 ```
 
-Each connection is `connected`, `disconnected`, `unauthorised` or `waiting-for-flight`.
-`simulator` is the SimConnect pipe, so it stays disconnected until the sim is running and in a
-flight. `discord` is the local IPC socket. `adsb` reads `waiting-for-flight` whenever there is
-no callsign to publish under, and `unauthorised` when the client token was rejected. `api` is
+Each connection is `connected`, `disconnected`, `unauthorised`, `waiting-for-flight` or, for
+`adsb` alone, `standby`. `simulator` is the SimConnect pipe, so it stays disconnected until the
+sim is running and in a flight. `discord` is the local IPC socket. `adsb` reads
+`waiting-for-flight` whenever there is no callsign to publish under, `unauthorised` when the
+client token was rejected, and `standby` when transmission has been switched off. `api` is
 `flight-tracker-api` itself.
 
 The one that surprises people: **nothing publishes without a current flight in Flight Tracker.**
@@ -110,8 +113,21 @@ The callsign comes from the API's current flight and never from the simulator's 
 no flight started you will see `no current flight, publishing suspended` and an empty
 `callsign=-` no matter how healthy SimConnect looks. Start the flight in the web app first.
 
+### The keys
+
 There is no tray icon yet, so the console window is the whole interface and closing it stops the
-app.
+app. Everything it can be asked to do is one letter, listed along the bottom of the frame:
+
+| Key | What it does |
+| --- | --- |
+| `s` | Sign in. Asks for the email, then the password, masked. The outcome opens the log pane rather than being written somewhere nobody is looking. |
+| `c` | Set a callsign by hand, publishing without a Flight Tracker flight. Empty follows the current flight again. A callsign the service would refuse is turned away here with a reason rather than as a 400 per second. |
+| `t` | Switch transmission off and on. Off reads as `standby`, and the tab says so too — nothing is published and nothing is queued for later. It starts on, so a flight that never touches it behaves as it always did. |
+| `l` | Show or hide the log pane. |
+| `ctrl-c` | Quit. |
+
+Transmission being a switch matters most with `c`: setting a callsign by hand used to start
+broadcasting your position on the spot with no way to stop it short of quitting.
 
 ## Developing on macOS
 

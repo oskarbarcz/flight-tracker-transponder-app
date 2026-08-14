@@ -88,8 +88,16 @@ function handlers(
   return {
     onQuit: () => undefined,
     onCallsign: () => undefined,
+    onSignIn: () => undefined,
+    onTransmit: () => undefined,
     ...overrides,
   };
+}
+
+function type(input: FakeInput, text: string): void {
+  for (const character of text) {
+    input.press(character);
+  }
 }
 
 describe('Dashboard', () => {
@@ -289,6 +297,180 @@ describe('Dashboard', () => {
     expect(input.rawModes).toEqual([true, false]);
     expect(input.listening).toBe(false);
     expect(out.all).toContain('[?1049l');
+  });
+
+  it('asks for an email and then a masked password on s', () => {
+    const { out, input, view } = dashboard();
+    const attempts: [string, string][] = [];
+
+    view.start(
+      handlers({
+        onSignIn: (email, password) => attempts.push([email, password]),
+      }),
+    );
+
+    input.press('s');
+    expect(out.all).toContain('email ›');
+
+    type(input, 'pilot@example.com');
+    input.press('\r');
+    out.written = [];
+
+    type(input, 'P@$$w0rd');
+    const asking = out.all;
+    input.press('\r');
+    view.stop();
+
+    expect(asking).toContain('password ›');
+    expect(asking).not.toContain('P@$$w0rd');
+    expect(asking).toContain('*'.repeat('P@$$w0rd'.length));
+    expect(attempts).toEqual([['pilot@example.com', 'P@$$w0rd']]);
+  });
+
+  it('never trims a password, and never writes one to the frame', () => {
+    const { out, input, view } = dashboard();
+    const attempts: [string, string][] = [];
+
+    view.start(
+      handlers({
+        onSignIn: (email, password) => attempts.push([email, password]),
+      }),
+    );
+
+    input.press('s');
+    type(input, '  pilot@example.com  ');
+    input.press('\r');
+    type(input, ' spaced ');
+    input.press('\r');
+    view.stop();
+
+    expect(attempts).toEqual([['pilot@example.com', ' spaced ']]);
+    expect(out.all).not.toContain('spaced');
+  });
+
+  it('lets a password with an accent in it be typed at all', () => {
+    const { input, view } = dashboard();
+    const attempts: [string, string][] = [];
+
+    view.start(
+      handlers({
+        onSignIn: (email, password) => attempts.push([email, password]),
+      }),
+    );
+
+    input.press('s');
+    type(input, 'pilot@example.com');
+    input.press('\r');
+    type(input, 'grüß');
+    input.press('\r');
+    view.stop();
+
+    expect(attempts).toEqual([['pilot@example.com', 'grüß']]);
+  });
+
+  it('abandons the sign-in when the email is left empty', () => {
+    const { input, view } = dashboard();
+    let asked = 0;
+
+    view.start(
+      handlers({
+        onSignIn: () => {
+          asked += 1;
+        },
+      }),
+    );
+
+    input.press('s');
+    input.press('\r');
+    input.press('\r');
+    view.stop();
+
+    expect(asked).toBe(0);
+  });
+
+  it('lets escape out of the password without signing in', () => {
+    const { input, view } = dashboard();
+    let asked = 0;
+
+    view.start(
+      handlers({
+        onSignIn: () => {
+          asked += 1;
+        },
+      }),
+    );
+
+    input.press('s');
+    type(input, 'pilot@example.com');
+    input.press('\r');
+    type(input, 'secret');
+    input.press(ESCAPE);
+    view.stop();
+
+    expect(asked).toBe(0);
+  });
+
+  it('asks to toggle transmission on t', () => {
+    const { input, view } = dashboard();
+    let toggles = 0;
+
+    view.start(
+      handlers({
+        onTransmit: () => {
+          toggles += 1;
+        },
+      }),
+    );
+
+    input.press('t');
+    input.press('T');
+    view.stop();
+
+    expect(toggles).toBe(2);
+  });
+
+  it('takes t and s as text while a callsign is being typed', () => {
+    const { input, view } = dashboard();
+    const typed: (string | null)[] = [];
+    let toggles = 0;
+
+    view.start(
+      handlers({
+        onCallsign: (value) => typed.push(value),
+        onTransmit: () => {
+          toggles += 1;
+        },
+      }),
+    );
+
+    input.press('c');
+    type(input, 'TS12');
+    input.press('\r');
+    view.stop();
+
+    expect(typed).toEqual(['TS12']);
+    expect(toggles).toBe(0);
+  });
+
+  it('reveals the log pane so an answer the pilot waited for is seen', () => {
+    const { out, view } = dashboard();
+
+    view.start(handlers());
+    view.append('sign-in failed: wrong password');
+    out.written = [];
+
+    view.revealLogs();
+    const revealed = out.all;
+
+    // Already open: revealing again must not close it, which a plain toggle
+    // would have done.
+    view.append('and here is why');
+    out.written = [];
+    view.revealLogs();
+    view.stop();
+
+    expect(revealed).toContain('sign-in failed');
+    expect(out.all).toContain('and here is why');
   });
 
   it('reflects status changes on the next render', () => {

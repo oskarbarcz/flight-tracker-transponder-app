@@ -26,6 +26,19 @@ export class NotSignedInError extends Error {
   }
 }
 
+// Distinct from SessionExpiredError, which used to cover this too: a pilot who
+// has just mistyped a password reads "the stored session is no longer accepted"
+// and has no idea it was talking about the thing they typed a second ago.
+export class SignInRejectedError extends Error {
+  constructor(status: number) {
+    super(
+      status === 401 || status === 403
+        ? 'That email and password were not accepted.'
+        : `The API answered ${status} to the sign-in.`,
+    );
+  }
+}
+
 type TokenPair = {
   accessToken: string;
   refreshToken: string;
@@ -56,7 +69,7 @@ export class FlightTrackerClient {
     );
 
     if (!response.ok) {
-      throw new SessionExpiredError();
+      throw new SignInRejectedError(response.status);
     }
 
     await this.acceptTokens((await response.json()) as TokenPair);

@@ -1,10 +1,13 @@
 export type ConnectionName = 'simulator' | 'discord' | 'adsb' | 'api';
 
+// `standby` is the transponder's own word for it, and only `adsb` ever wears
+// it: the connection is fine, the pilot has switched transmission off.
 export type ConnectionState =
   | 'connected'
   | 'disconnected'
   | 'unauthorised'
-  | 'waiting-for-flight';
+  | 'waiting-for-flight'
+  | 'standby';
 
 export type StatusSnapshot = {
   connections: Record<ConnectionName, ConnectionState>;
@@ -18,6 +21,14 @@ export type StatusSnapshot = {
 };
 
 const CONNECTIONS: ConnectionName[] = ['simulator', 'discord', 'adsb', 'api'];
+
+export const CONNECTION_STATES: ConnectionState[] = [
+  'connected',
+  'disconnected',
+  'unauthorised',
+  'waiting-for-flight',
+  'standby',
+];
 
 export class StatusRegistry {
   private readonly connections = new Map<ConnectionName, ConnectionState>(

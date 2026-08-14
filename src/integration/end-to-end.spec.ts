@@ -4,10 +4,16 @@ import {
   SessionExpiredError,
 } from '../api/flight-tracker.client';
 import { InMemoryTokenStore } from '../api/token-store';
-import { AdsbClient, AdsbTokenRejectedError } from '../adsb/adsb.client';
+import {
+  AdsbClient,
+  AdsbPublishFailedError,
+  AdsbReportRejectedError,
+  AdsbTokenRejectedError,
+} from '../adsb/adsb.client';
 import { PositionFeed } from '../feeds/position.feed';
 import { PresenceFeed } from '../feeds/presence.feed';
 import { PositionQueue } from '../domain/position-queue';
+import { toPositionReport } from '../domain/position-report';
 import { RatePolicy } from '../domain/rate-policy';
 import type { SimSample } from '../domain/sim-sample';
 import { StatusRegistry } from '../core/status';
@@ -74,16 +80,22 @@ function silentLogger(): Logger {
 describe('flight-tracker API integration', () => {
   let api: StubService;
   let presenceStatus = 200;
+  let signInStatus = 200;
   let refreshes = 0;
   let accessTokensIssued = 0;
 
   beforeEach(async () => {
     presenceStatus = 200;
+    signInStatus = 200;
     refreshes = 0;
     accessTokensIssued = 0;
 
     api = new StubService({
       'POST /api/v1/auth/sign-in': () => {
+        if (signInStatus !== 200) {
+          return { status: signInStatus };
+        }
+
         accessTokensIssued += 1;
         return {
           status: 200,
@@ -170,6 +182,24 @@ describe('flight-tracker API integration', () => {
     );
   });
 
+  // The message a pilot reads after mistyping a password, which used to be
+  // about a stored session they had never had.
+  it('blames the credentials when they are what was rejected', async () => {
+    signInStatus = 401;
+
+    await expect(client().signIn('pilot@example.com', 'wrong')).rejects.toThrow(
+      'That email and password were not accepted.',
+    );
+  });
+
+  it('names the status when the sign-in failed for some other reason', async () => {
+    signInStatus = 503;
+
+    await expect(
+      client().signIn('pilot@example.com', 'P@$$w0rd'),
+    ).rejects.toThrow('The API answered 503 to the sign-in.');
+  });
+
   it('gives up on a session the API no longer accepts', async () => {
     const store = new InMemoryTokenStore();
     await store.write({ refreshToken: 'stale' });
@@ -213,16 +243,30 @@ describe('flight-tracker API integration', () => {
 describe('ADS-B service integration', () => {
   let adsbService: StubService;
   let publishStatus = 200;
+  let publishBody: unknown;
+
+  // What the real service does with a report that is missing a field: its
+  // `CreatePositionRequest` lists all thirteen as required, and NestJS answers
+  // a validation error rather than storing anything.
+  const VALIDATION_ERROR = {
+    message: ['squawk must be a string'],
+    error: 'Bad Request',
+    statusCode: 400,
+  };
 
   beforeEach(async () => {
     publishStatus = 200;
+    publishBody = undefined;
 
     adsbService = new StubService({
       'POST /api/v1/auth-check/client': (request) =>
         request.authorization === 'Bearer client-token'
           ? { status: 200, body: { ok: true } }
           : { status: 401 },
-      'POST /api/v1/position': () => ({ status: publishStatus }),
+      'POST /api/v1/position': () => ({
+        status: publishStatus,
+        body: publishBody,
+      }),
     });
 
     await adsbService.start();
@@ -337,5 +381,101 @@ describe('ADS-B service integration', () => {
     await feed.drain();
 
     expect(status.snapshot().connections.adsb).toBe('unauthorised');
+  });
+
+  it('sends every field the contract marks required, even from a bare sample', async () => {
+    const { feed } = feedFor();
+
+    feed.accept(
+      sample({
+        groundSpeed: Number.NaN,
+        verticalRate: Number.NaN,
+        transponderCodeBcd: 0x9999,
+      }),
+    );
+    await feed.drain();
+
+    const body = JSON.parse(
+      adsbService.requestsTo('/api/v1/position')[0]?.body ?? '{}',
+    ) as Record<string, unknown>;
+
+    for (const field of [
+      'date',
+      'longitude',
+      'latitude',
+      'callsign',
+      'verticalRate',
+      'squawk',
+      'groundSpeed',
+      'track',
+      'alert',
+      'emergency',
+      'spi',
+      'isOnGround',
+      'altitude',
+    ]) {
+      expect(body[field]).toBeDefined();
+    }
+  });
+
+  it('reads the reason out of a 400 instead of reporting the bare status', async () => {
+    const { feed } = feedFor();
+
+    publishStatus = 400;
+    publishBody = VALIDATION_ERROR;
+
+    await expect(
+      new AdsbClient(adsbService.baseUrl, 'client-token').publish(
+        toPositionReport(sample(), 'LH455'),
+      ),
+    ).rejects.toThrow('squawk must be a string');
+
+    // And it does not become a report that is retried until the queue overflows.
+    feed.accept(sample());
+    await feed.drain();
+
+    expect(adsbService.requestsTo('/api/v1/position')).toHaveLength(2);
+  });
+
+  // 429 and 408 are the two 4xx that mean "later" rather than "never", so they
+  // stay on the retry path with the 5xx family.
+  it.each([
+    [400, 'rejected'],
+    [404, 'rejected'],
+    [408, 'retried'],
+    [429, 'retried'],
+    [503, 'retried'],
+  ])('treats %s as %s', async (status, verdict) => {
+    publishStatus = status;
+
+    const publishing = new AdsbClient(
+      adsbService.baseUrl,
+      'client-token',
+    ).publish(toPositionReport(sample(), 'LH455'));
+
+    await expect(publishing).rejects.toBeInstanceOf(
+      verdict === 'rejected' ? AdsbReportRejectedError : AdsbPublishFailedError,
+    );
+  });
+
+  it('keeps draining after a report the service will never accept', async () => {
+    const { feed, status } = feedFor();
+
+    publishStatus = 400;
+    publishBody = VALIDATION_ERROR;
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 0)) }),
+    );
+    await feed.drain();
+
+    publishStatus = 200;
+    publishBody = undefined;
+    feed.accept(
+      sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 1)) }),
+    );
+    await feed.drain();
+
+    expect(status.snapshot().publishedCount).toBe(1);
+    expect(status.snapshot().droppedCount).toBe(1);
   });
 });
