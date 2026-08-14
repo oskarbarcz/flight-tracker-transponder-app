@@ -6,6 +6,7 @@ import {
 import { normalizeCallsign } from '../domain/callsign';
 import type { PositionQueue } from '../domain/position-queue';
 import {
+  decodeSquawk,
   isPublishable,
   type PositionReport,
   toPositionReport,
@@ -64,6 +65,7 @@ export class PositionFeed {
     }
 
     this.transmitting = transmitting;
+    this.status.setTransmitting(transmitting);
     this.policy.reset();
 
     if (!transmitting) {
@@ -85,6 +87,14 @@ export class PositionFeed {
   }
 
   accept(sample: SimSample): void {
+    // Read off every sample, before any of the gates below: section 3 reports
+    // what the aircraft's transponder is set to, which is true whether or not
+    // this app is publishing it anywhere.
+    this.status.setTransponder(
+      decodeSquawk(sample.transponderCodeBcd) ?? null,
+      Number.isFinite(sample.groundSpeed) ? sample.groundSpeed : null,
+    );
+
     if (!this.transmitting) {
       return;
     }

@@ -105,50 +105,75 @@ Each connection is `connected`, `disconnected`, `unauthorised`, `waiting-for-fli
 `adsb` alone, `standby`. `simulator` is the SimConnect pipe, so it stays disconnected until the
 sim is running and in a flight. `discord` is the local IPC socket. `adsb` reads
 `waiting-for-flight` whenever there is no callsign to publish under, `unauthorised` when the
-client token was rejected, and `standby` when transmission has been switched off. `api` is
-`flight-tracker-api` itself.
+client token was rejected, and `standby` when the transponder has been switched off. `api` is
+`flight-tracker-api` itself. The dashboard shows the same states, split across its sections.
 
 The one that surprises people: **nothing publishes without a current flight in Flight Tracker.**
 The callsign comes from the API's current flight and never from the simulator's ATC ID, so with
 no flight started you will see `no current flight, publishing suspended` and an empty
 `callsign=-` no matter how healthy SimConnect looks. Start the flight in the web app first.
 
-### The three sections
-
-The dashboard is three boxes. **1 TRANSPONDER** is the position feed: the SimConnect
-connection, what the ADS-B side of it is doing, the callsign it publishes under next to the
-aircraft the simulator reports, and how much has gone out. **2 DISCORD** is the local IPC
-socket and the activity currently published. **3 SERVICES** is what is on the other end and
-what it is running:
+### The five sections
 
 ```
-┌─ 3 SERVICES ─────────────────────────────────────────────────────────────────┐
-│ flight-tracker ● connected          v3.24.0                                  │
-│ adsb           ● connected          v0.5.0                                   │
-│ transponder    ● running            v0.7.0                                   │
+┌─ 1 CREW ──────────────────┐┌─ 2 CRNT SERVICE ──────────────────────────────┐
+│ Oskar Barcz               ││ DLH5540 * [BER] Berlin -> [WAW] Warsaw Chopin │
+│ oskar@barcz.me            ││ airframe: [B77W] * tail: [SP-LVD]             │
+└───────────────────────────┘└───────────────────────────────────────────────┘
+┌─ 3 XPNDR ─────────────────┐┌─ 4 COMMS ─────────────────────────────────────┐
+│ tail:   [SP-LVD]          ││ discord:  ● connected                         │
+│ squawk: [2000]            ││ presence: [ON]                                │
+│ mode:   [MODE C]          ││ BER -> WAW                                    │
+│ spd:    451kt             ││ Cruise, landing at 15:50z                     │
+│ call:   11:30:30z         ││                                               │
+└───────────────────────────┘└───────────────────────────────────────────────┘
+┌─ 5 STATUS ───────────────────────────────────────────────────────────────────┐
+│ adsb: [OK, v0.5.0] · tracker: [OK, v3.24.0] · xpndr: [OK, v0.7.0]            │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Both versions are read without a token — the ADS-B service states one on `GET /`, and the API,
-which publishes no status route at all, states one in the `info` block of its OpenAPI document.
-That matters: the row still tells you what is deployed at the far end when the session or the
-client token is the very thing that is broken. A version that could not be read shows as `—`
-and stops nothing. Neither is polled often, because neither changes except on a deploy, and the
-API's document costs a quarter of a megabyte to read — `VERSION_POLL_INTERVAL_MS` sets the
-interval, fifteen minutes by default.
+**1 CREW** and **2 CRNT SERVICE** both come off one `GET /user/me`, so knowing who is signed in
+costs no extra request. When the airport names do not fit — half of an eighty-column terminal
+does not hold them — the route falls back to the codes alone, because a name cut off mid-word
+identifies an airport less well than `[WAW]` does.
+
+**3 XPNDR** is the aircraft, not the network. `tail` here is the simulator's own `ATC ID` while
+section 2 shows the tail Flight Tracker assigned, so a mismatch between the two is visible
+rather than mysterious. `squawk` and `spd` are read off every sample even while nothing is being
+published, because they are the aircraft's state either way. `mode` is `MODE C` when the
+transponder is transmitting and `STBY` when it is not. `call` is when the last report was
+accepted, in zulu and to the second: it is what distinguishes a feed that stopped from one that
+is a second old.
+
+**4 COMMS** is the local Discord socket and whether an activity is currently published.
+
+**5 STATUS** is one line, because three services and their versions is a sentence rather than a
+table, and reading it left to right is how anyone reports a fault. `adsb` and `tracker` report
+each service's own version, read **without a token** — the ADS-B service states one on `GET /`,
+and the API, which publishes no status route at all, states one in the `info` block of its
+OpenAPI document. That matters: the line still says what is deployed at the far end when the
+session or the client token is the very thing that is broken. A version that could not be read is
+simply left out and stops nothing. Neither is polled often, because neither changes except on a
+deploy and the API's document costs a quarter of a megabyte to read — `VERSION_POLL_INTERVAL_MS`
+sets the interval, fifteen minutes by default.
+
+`xpndr` reads `[OK, v0.7.0]` unless GitHub has a newer release, in which case it reads
+`[UPDATE to v0.8.0 possible]`. That check is unauthenticated and best-effort: GitHub being
+unreachable leaves the row saying OK rather than complaining, and a build from source, whose
+version is the string `dev`, never claims an update is available.
 
 ### The keys
 
 There is no tray icon yet, so the console window is the whole interface, and closing it — or
 Ctrl-C — stops the app. Everything it can be *asked* to do is one letter, listed along the
-bottom of the frame:
+bottom of the frame, each in brackets so the key can be told from its label:
 
 | Key | What it does |
 | --- | --- |
-| `s` | Sign in. Asks for the email, then the password, masked. The outcome opens the log pane rather than being written somewhere nobody is looking. |
-| `c` | Set a callsign by hand, publishing without a Flight Tracker flight. Empty follows the current flight again. A callsign the service would refuse is turned away here with a reason rather than as a 400 on every report. |
-| `t` | Switch transmission off and on. Off reads as `standby`, and the tab says so too — nothing is published and nothing is queued for later. It starts on, so a flight that never touches it behaves as it always did. |
-| `l` | Show or hide the log pane. |
+| `[s]` | Sign in, or sign out once there is a session to end. Asks for the email, then the password, masked. The outcome opens the debug pane rather than being written somewhere nobody is looking. Signing out is greyed out, and does nothing, while the transponder is transmitting — ending a session mid-flight would strand a track halfway through. Press `t` first. |
+| `[t]` | Toggle the transponder between `MODE C` and `STBY`. On standby nothing is published and nothing is queued for later, so switching back on does not backfill the gap you asked for. It starts transmitting, so a flight that never touches it behaves as it always did. |
+| `[c]` | Publish under a callsign you type, rather than the current flight's. Empty follows the flight again. A callsign the service would refuse is turned away here with a reason rather than as a 400 on every report. |
+| `[d]` | Show or hide the debug messages. |
 
 Transmission being a switch matters most with `c`: setting a callsign by hand used to start
 broadcasting your position on the spot with no way to stop it short of quitting.

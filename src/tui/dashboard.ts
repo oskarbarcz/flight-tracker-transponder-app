@@ -5,9 +5,9 @@ import type { Screen } from './screen';
 
 const REFRESH_MS = 250;
 const LOG_CAPACITY = 200;
-const LOGS_KEY = 'l';
+const DEBUG_KEY = 'd';
 const CALLSIGN_KEY = 'c';
-const SIGN_IN_KEY = 's';
+const SESSION_KEY = 's';
 const TRANSMIT_KEY = 't';
 const CANCEL = '\u0003';
 const ESCAPE = '\u001b';
@@ -22,6 +22,7 @@ export type DashboardHandlers = {
   onQuit: () => void;
   onCallsign: (callsign: string | null) => void;
   onSignIn: (email: string, password: string) => void;
+  onSignOut: () => void;
   onTransmit: () => void;
 };
 
@@ -29,6 +30,7 @@ const IGNORE: DashboardHandlers = {
   onQuit: () => undefined,
   onCallsign: () => undefined,
   onSignIn: () => undefined,
+  onSignOut: () => undefined,
   onTransmit: () => undefined,
 };
 
@@ -182,6 +184,27 @@ export class Dashboard {
     });
   }
 
+  // One key, two meanings, taken from the state the frame is already showing so
+  // that pressing it does what the bottom line says it will. Signing out while
+  // the transponder is transmitting would strand a flight halfway through its
+  // track, so there it does nothing — which is what the greyed-out label means.
+  private session(): void {
+    const status = this.status.snapshot();
+
+    if (status.crew === null) {
+      this.askSignIn();
+
+      return;
+    }
+
+    if (status.transmitting) {
+      return;
+    }
+
+    this.handlers.onSignOut();
+    this.render();
+  }
+
   private listen(): void {
     if (this.input === null) {
       return;
@@ -213,7 +236,7 @@ export class Dashboard {
 
     const key = character.toLowerCase();
 
-    if (key === LOGS_KEY) {
+    if (key === DEBUG_KEY) {
       this.toggleLogs();
 
       return;
@@ -225,8 +248,8 @@ export class Dashboard {
       return;
     }
 
-    if (key === SIGN_IN_KEY) {
-      this.askSignIn();
+    if (key === SESSION_KEY) {
+      this.session();
 
       return;
     }

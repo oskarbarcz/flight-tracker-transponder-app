@@ -81,12 +81,27 @@ describe('flight-tracker API integration', () => {
   let api: StubService;
   let presenceStatus = 200;
   let signInStatus = 200;
+  let flightBody: unknown;
   let refreshes = 0;
   let accessTokensIssued = 0;
 
   beforeEach(async () => {
     presenceStatus = 200;
     signInStatus = 200;
+    flightBody = {
+      id: FLIGHT_ID,
+      callsign: 'AAL 4908',
+      // The shape a flight leg's airports really have: `iataCode` and
+      // `icaoCode`, whatever the OpenAPI document says about strings.
+      airports: [
+        { iataCode: 'BOS', icaoCode: 'KBOS', name: 'Boston Logan' },
+        { iataCode: 'PHL', icaoCode: 'KPHL', name: 'Philadelphia' },
+      ],
+      aircraft: {
+        registration: 'N720AN',
+        airframe: { type: 'B77W', name: 'B777-300ER' },
+      },
+    };
     refreshes = 0;
     accessTokensIssued = 0;
 
@@ -124,11 +139,15 @@ describe('flight-tracker API integration', () => {
       },
       'GET /api/v1/user/me': () => ({
         status: 200,
-        body: { currentFlightId: FLIGHT_ID },
+        body: {
+          name: 'Oskar Barcz',
+          email: 'pilot@example.com',
+          currentFlightId: FLIGHT_ID,
+        },
       }),
       [`GET /api/v1/flight/${FLIGHT_ID}`]: () => ({
         status: 200,
-        body: { id: FLIGHT_ID, callsign: 'AAL 4908' },
+        body: flightBody,
       }),
       'GET /api/v1/user/me/discord-presence': () =>
         presenceStatus === 204
@@ -162,7 +181,14 @@ describe('flight-tracker API integration', () => {
 
     const flight = await flightTracker.getCurrentFlight();
 
-    expect(flight).toEqual({ id: FLIGHT_ID, callsign: 'AAL 4908' });
+    expect(flight).toEqual({
+      id: FLIGHT_ID,
+      callsign: 'AAL 4908',
+      departure: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan' },
+      arrival: { iata: 'PHL', icao: 'KPHL', name: 'Philadelphia' },
+      airframe: 'B77W',
+      registration: 'N720AN',
+    });
     expect(api.requestsTo('/api/v1/user/me')[0]?.authorization).toBe(
       'Bearer access-1',
     );
@@ -204,7 +230,42 @@ describe('flight-tracker API integration', () => {
     ).rejects.toThrow('The API answered 503 to the sign-in.');
   });
 
-  // Section 3 of the dashboard has to say something useful precisely when the
+  it('reads the crew off the same request the flight id came from', async () => {
+    const flightTracker = client();
+    await flightTracker.signIn('pilot@example.com', 'P@$$w0rd');
+
+    await expect(flightTracker.getCurrentUser()).resolves.toEqual({
+      name: 'Oskar Barcz',
+      email: 'pilot@example.com',
+      currentFlightId: FLIGHT_ID,
+    });
+  });
+
+  // `airports` is documented as an array of strings. If it ever really is one,
+  // the route goes blank and the callsign — which is what the feed needs —
+  // still arrives, rather than an exception taking the whole poll down.
+  it('settles for no route rather than throwing on an unexpected shape', async () => {
+    flightBody = {
+      id: FLIGHT_ID,
+      callsign: 'AAL 4908',
+      airports: ['ba9ac708-0cef-4d92-a824-4e95f60bd752'],
+      aircraft: {},
+    };
+
+    const flightTracker = client();
+    await flightTracker.signIn('pilot@example.com', 'P@$$w0rd');
+
+    await expect(flightTracker.getFlight(FLIGHT_ID)).resolves.toEqual({
+      id: FLIGHT_ID,
+      callsign: 'AAL 4908',
+      departure: null,
+      arrival: null,
+      airframe: null,
+      registration: null,
+    });
+  });
+
+  // Section 5 of the dashboard has to say something useful precisely when the
   // session is the thing that is broken, so the version must not need one.
   it('reads its version out of the OpenAPI document, with no session', async () => {
     const flightTracker = new FlightTrackerClient(
