@@ -1,6 +1,8 @@
 import { loadConfig } from './config/config';
 import { envFilePaths, loadEnvFiles } from './config/env-file';
-import { Logger } from './core/logger';
+import { type LogSink, Logger, streamSink } from './core/logger';
+import { Dashboard } from './tui/dashboard';
+import { Screen } from './tui/screen';
 import { StatusRegistry } from './core/status';
 import { describeError, Supervisor } from './core/supervisor';
 import { FileTokenStore, SecretTokenStore } from './api/token-store';
@@ -26,8 +28,15 @@ async function bootstrap(): Promise<void> {
   loadEnvFiles(envFilePaths());
 
   const config = loadConfig();
-  const logger = new Logger(config.logLevel, config.logFilePath);
   const status = new StatusRegistry();
+
+  let logSink: LogSink = streamSink;
+  const logger = new Logger(
+    config.logLevel,
+    config.logFilePath,
+    'app',
+    (line) => logSink(line),
+  );
   const supervisor = new Supervisor(logger);
 
   const secrets = secretStoreFor(process.platform, process.cwd());
@@ -91,6 +100,64 @@ async function bootstrap(): Promise<void> {
     },
   );
 
+  let callsignOverride: string | null = null;
+
+  const applyCallsign = (callsign: string | null): void => {
+    if (callsignOverride === null) {
+      positionFeed.setCurrentFlightCallsign(callsign);
+    }
+  };
+
+  const overrideCallsign = (callsign: string | null): void => {
+    callsignOverride = callsign;
+    positionFeed.setCurrentFlightCallsign(callsign);
+
+    logger.warn(
+      callsign === null
+        ? 'callsign override released: following the current flight again'
+        : `callsign overridden to ${callsign}: publishing without a Flight Tracker flight`,
+    );
+  };
+
+  const dashboard =
+    process.stdout.isTTY === true
+      ? new Dashboard(
+          new Screen(process.stdout),
+          status,
+          process.env.APP_VERSION ?? 'dev',
+          () => process.stdout.columns ?? 80,
+          process.stdin,
+        )
+      : null;
+
+  let stopping = false;
+  const shutdown = async (): Promise<void> => {
+    if (stopping) {
+      return;
+    }
+
+    stopping = true;
+    dashboard?.stop();
+    logSink = streamSink;
+    logger.info('shutting down');
+    await presenceFeed.clear().catch(() => undefined);
+    await presenceWriter.disconnect().catch(() => undefined);
+    await supervisor.stop();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+
+  if (dashboard !== null) {
+    logSink = (line) => dashboard.append(line);
+    dashboard.start({
+      onQuit: () => void shutdown(),
+      onCallsign: overrideCallsign,
+    });
+    process.stdout.on('resize', () => dashboard.resize());
+  }
+
   supervisor.start({
     name: 'simulator',
     run: async (signal) => {
@@ -137,14 +204,15 @@ async function bootstrap(): Promise<void> {
       while (!signal.aborted) {
         try {
           const flight = await api.getCurrentFlight();
-          positionFeed.setCurrentFlightCallsign(flight?.callsign ?? null);
+          applyCallsign(flight?.callsign ?? null);
+          status.set('api', 'connected');
         } catch (error) {
           if (
             error instanceof SessionExpiredError ||
             error instanceof NotSignedInError
           ) {
             status.set('api', 'unauthorised');
-            positionFeed.setCurrentFlightCallsign(null);
+            applyCallsign(null);
           } else {
             status.set('api', 'disconnected');
             logger.warn(`current flight poll failed: ${describeError(error)}`);
@@ -180,17 +248,6 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
-
-  const shutdown = async (): Promise<void> => {
-    logger.info('shutting down');
-    await presenceFeed.clear().catch(() => undefined);
-    await presenceWriter.disconnect().catch(() => undefined);
-    await supervisor.stop();
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
 }
 
 function sleep(ms: number): Promise<void> {
