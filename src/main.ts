@@ -108,13 +108,18 @@ async function bootstrap(): Promise<void> {
   }
 
   await adsb.verifyToken().then(
-    () => status.set('adsb', 'connected'),
+    () => {
+      status.set('adsb', 'connected');
+      status.setFault('adsb', null);
+    },
     (error: unknown) => {
-      status.set(
+      const rejected = error instanceof AdsbTokenRejectedError;
+      status.set('adsb', rejected ? 'unauthorised' : 'disconnected');
+      status.setFault(
         'adsb',
-        error instanceof AdsbTokenRejectedError
-          ? 'unauthorised'
-          : 'disconnected',
+        rejected
+          ? 'the ADS-B client token was rejected; this build cannot publish positions'
+          : describeError(error),
       );
       logger.error(`ADS-B token check failed: ${describeError(error)}`);
     },
@@ -201,12 +206,14 @@ async function bootstrap(): Promise<void> {
       );
       applyCallsign(flight?.callsign ?? null);
       status.set('api', 'connected');
+      status.setFault('api', null);
     } catch (error) {
       if (
         error instanceof SessionExpiredError ||
         error instanceof NotSignedInError
       ) {
         status.set('api', 'unauthorised');
+        status.setFault('api', 'not signed in; press s to sign in');
         // Section 1 says "not signed in" rather than keeping the name of a
         // session the API has stopped accepting.
         status.setCrew(null);
@@ -214,6 +221,7 @@ async function bootstrap(): Promise<void> {
         applyCallsign(null);
       } else {
         status.set('api', 'disconnected');
+        status.setFault('api', describeError(error));
         logger.warn(`current flight poll failed: ${describeError(error)}`);
       }
     }
@@ -238,6 +246,7 @@ async function bootstrap(): Promise<void> {
       async () => {
         logger.info(`signed in as ${email}`);
         status.set('api', 'connected');
+        status.setFault('api', null);
         dashboard?.revealLogs();
         // Without this the pilot waits out the poll interval wondering whether
         // anything happened.
@@ -245,6 +254,7 @@ async function bootstrap(): Promise<void> {
       },
       (error: unknown) => {
         status.set('api', 'unauthorised');
+        status.setFault('api', describeError(error));
         logger.error(`sign-in failed: ${describeError(error)}`);
         dashboard?.revealLogs();
       },
@@ -255,6 +265,7 @@ async function bootstrap(): Promise<void> {
     void api.signOut().then(
       () => {
         status.set('api', 'unauthorised');
+        status.setFault('api', 'signed out; press s to sign in again');
         status.setCrew(null);
         status.setService(null);
         applyCallsign(null);
@@ -321,11 +332,19 @@ async function bootstrap(): Promise<void> {
           .then(
             ({ application, protocol }) => {
               status.set('simulator', 'connected');
+              status.setFault('simulator', null);
               logger.info(
                 `simulator connected: ${application} over ${PROTOCOL_NAMES[protocol] ?? protocol}`,
               );
             },
             (error: unknown) => {
+              // Onto the frame, not only into the debug pane: this is the one
+              // fault a pilot hits before anything else works, and `simulator
+              // disconnected` on its own does not say the sim is not running.
+              status.setFault(
+                'simulator',
+                `${describeError(error)} ${simulatorHint()}`,
+              );
               logger.warn(
                 `simulator connection failed: ${describeError(error)}`,
               );
@@ -340,6 +359,14 @@ async function bootstrap(): Promise<void> {
 
       await closed;
       status.set('simulator', 'disconnected');
+
+      if (!signal.aborted) {
+        status.setFault(
+          'simulator',
+          status.snapshot().faults.simulator ??
+            `the simulator closed the connection ${simulatorHint()}`,
+        );
+      }
     },
   });
 
@@ -404,6 +431,16 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+}
+
+// What to do about it, which is the half of an error message a pilot can act
+// on. Which half depends on where the simulator is meant to be: over the LAN it
+// is a firewall and a SimConnect.xml, locally it is just whether MSFS is up.
+function simulatorHint(): string {
+  return process.env.SIMCONNECT_HOST === undefined ||
+    process.env.SIMCONNECT_HOST.trim() === ''
+    ? '(start MSFS and load a flight; retrying)'
+    : `(check MSFS is running on ${process.env.SIMCONNECT_HOST.trim()}, its SimConnect.xml has an IPv4 block, and the port is open; retrying)`;
 }
 
 function sleep(ms: number): Promise<void> {

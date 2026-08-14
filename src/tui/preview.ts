@@ -38,6 +38,14 @@ export function previewFrame(version: string): string {
   status.recordAcceptedReport(new Date(Date.UTC(2026, 7, 14, 11, 30, 30)));
   status.setDroppedCount(1);
 
+  // A fault, so the wrapped alert line is drawn too: it is the one part of the
+  // frame a pilot only ever sees when something has already gone wrong, which
+  // makes it the part most likely to be broken without anyone noticing.
+  status.setFault(
+    'adsb',
+    'The ADS-B service rejected a position report with 400: squawk must be a string',
+  );
+
   return [
     ...renderFrame({
       status: status.snapshot(),

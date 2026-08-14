@@ -296,6 +296,69 @@ describe('renderFrame', () => {
     expect(plain(80)).not.toContain('quit');
   });
 
+  // The simulator row vanished in the redesign, which left a pilot whose sim
+  // would not connect with nothing on screen at all.
+  it('reports the simulator link, which everything else here depends on', () => {
+    expect(plain(80)).toContain('sim:    ○ disconnected');
+    expect(
+      plain(80, (status) => status.set('simulator', 'connected')),
+    ).toContain('sim:    ● connected');
+  });
+
+  it('says why a connection is unhappy, not only that it is', () => {
+    const lines = plain(80, (status) => {
+      status.setFault('simulator', 'the simulator is not running');
+    });
+
+    expect(lines).toContain('! simulator — the simulator is not running');
+  });
+
+  it('shows nothing at all when nothing is wrong', () => {
+    expect(plain(80)).not.toContain('!');
+  });
+
+  // Truncating a fault cuts off the half that says what to do about it.
+  it('wraps a long fault to the gutter rather than cutting it off', () => {
+    const rows = plain(80, (status) => {
+      status.setFault(
+        'simulator',
+        'connect ECONNREFUSED 192.168.1.20:500 check MSFS is running there, ' +
+          'its SimConnect.xml has an IPv4 block, and the port is open',
+      );
+    }).split('\n');
+
+    const first = rows.findIndex((row) => row.includes('! simulator'));
+
+    expect(rows[first]).toContain('connect ECONNREFUSED');
+    expect(rows.slice(first, first + 3).join('\n')).toContain('the port is');
+    // Continuation lines line up under the message, not under the marker.
+    expect(rows[first + 1]).toMatch(/^ {16}\S/);
+  });
+
+  it('bounds a fault so a four-hundred-character body cannot eat the frame', () => {
+    const rows = plain(80, (status) => {
+      status.setFault('adsb', 'x'.repeat(2000));
+    }).split('\n');
+
+    const first = rows.findIndex((row) => row.includes('! adsb'));
+    const used = rows.slice(first).findIndex((row) => row.trim() === '');
+
+    expect(used).toBeLessThanOrEqual(3);
+    expect(rows.slice(first, first + 3).join('')).toContain('…');
+  });
+
+  // Most actionable first: a pilot can start the simulator, and cannot do much
+  // about the ADS-B service being down.
+  it('leads with the fault the pilot can act on', () => {
+    const lines = plain(80, (status) => {
+      status.setFault('adsb', 'adsb is unhappy');
+      status.setFault('simulator', 'the simulator is not running');
+    });
+
+    expect(lines).toContain('! simulator');
+    expect(lines).not.toContain('adsb is unhappy');
+  });
+
   it('survives an absurdly narrow terminal', () => {
     expect(() => frame(1)).not.toThrow();
 

@@ -37,6 +37,7 @@ export type CurrentService = {
 
 export type StatusSnapshot = {
   connections: Record<ConnectionName, ConnectionState>;
+  faults: Record<ConnectionName, string | null>;
   serviceVersions: Record<ServiceName, string | null>;
   latestRelease: string | null;
   crew: Crew | null;
@@ -74,6 +75,11 @@ export class StatusRegistry {
     SERVICES.map((name) => [name, null]),
   );
 
+  // Why a connection is unhappy, in words, kept apart from the state so the
+  // dashboard can say more than `disconnected`. A pilot whose simulator will
+  // not connect should not have to open the debug pane to find out why.
+  private readonly faults = new Map<ConnectionName, string>();
+
   private latestRelease: string | null = null;
   private crew: Crew | null = null;
   private service: CurrentService | null = null;
@@ -90,6 +96,16 @@ export class StatusRegistry {
 
   set(name: ConnectionName, state: ConnectionState): void {
     this.connections.set(name, state);
+  }
+
+  setFault(name: ConnectionName, message: string | null): void {
+    if (message === null) {
+      this.faults.delete(name);
+
+      return;
+    }
+
+    this.faults.set(name, message);
   }
 
   setServiceVersion(name: ServiceName, version: string | null): void {
@@ -148,6 +164,9 @@ export class StatusRegistry {
         ConnectionName,
         ConnectionState
       >,
+      faults: Object.fromEntries(
+        CONNECTIONS.map((name) => [name, this.faults.get(name) ?? null]),
+      ) as Record<ConnectionName, string | null>,
       serviceVersions: Object.fromEntries(this.serviceVersions) as Record<
         ServiceName,
         string | null

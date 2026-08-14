@@ -110,6 +110,35 @@ system SHALL NOT advertise quitting as one of them.
 - **WHEN** the feed stopped some minutes ago
 - **THEN** the time of the last accepted report is shown, and is what reveals it
 
+### Requirement: A broken connection says why, on the screen
+
+The system SHALL show, on the status view itself, the reason a connection is unhappy and not
+only the fact of it. The reason SHALL be readable in full rather than truncated, and SHALL be
+bounded so that a long one cannot displace the rest of the view. Where the pilot can act on the
+fault, the message SHALL say what to do. A reason SHALL be cleared when the connection recovers.
+
+#### Scenario: The simulator is not running
+
+- **WHEN** the SimConnect connection cannot be established
+- **THEN** the view names the simulator, says its pipe is absent, and says to start the
+  simulator — without the pilot opening any log
+
+#### Scenario: The simulator is across the network
+
+- **WHEN** the connection to a configured `SIMCONNECT_HOST` is refused
+- **THEN** the message names the host and points at the simulator's own configuration and the
+  port, which is what is usually wrong
+
+#### Scenario: More than one thing is wrong
+
+- **WHEN** several connections are unhappy at once
+- **THEN** one fault is shown, the one the pilot is most able to act on
+
+#### Scenario: The connection recovers
+
+- **WHEN** the simulator connects
+- **THEN** the fault disappears from the view
+
 ### Requirement: Ending a session cannot strand a flight
 
 The system SHALL let the pilot end the session from the status view, and SHALL refuse to do so
