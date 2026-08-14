@@ -1,5 +1,5 @@
 import { StatusRegistry } from '../core/status';
-import { renderFrame, SIDE_BY_SIDE_COLUMNS } from './frame';
+import { renderFrame, renderTitle, SIDE_BY_SIDE_COLUMNS } from './frame';
 
 function frame(
   columns: number,
@@ -107,5 +107,60 @@ describe('renderFrame', () => {
     for (const line of frame(1)) {
       expect(line.length).toBeLessThanOrEqual(24);
     }
+  });
+});
+
+function healthy(status: StatusRegistry): void {
+  status.set('simulator', 'connected');
+  status.set('adsb', 'waiting-for-flight');
+  status.set('api', 'connected');
+}
+
+function title(
+  mutate: (status: StatusRegistry) => void = () => undefined,
+): string {
+  const status = new StatusRegistry();
+  mutate(status);
+
+  return renderTitle(status.snapshot());
+}
+
+describe('renderTitle', () => {
+  it('leads with whatever is broken', () => {
+    expect(title()).toBe('simulator disconnected · Flight Tracker');
+  });
+
+  it('names a connection that turned us away', () => {
+    expect(
+      title((status) => {
+        healthy(status);
+        status.set('adsb', 'unauthorised');
+      }),
+    ).toBe('adsb unauthorised · Flight Tracker');
+  });
+
+  it('leaves discord off the title however badly it is doing', () => {
+    expect(
+      title((status) => {
+        healthy(status);
+        status.set('discord', 'disconnected');
+      }),
+    ).not.toContain('discord');
+  });
+
+  it('treats waiting for a flight as quiet rather than broken', () => {
+    expect(title(healthy)).toBe('no flight · Flight Tracker');
+  });
+
+  it('shows the callsign and how much it has sent once flying', () => {
+    expect(
+      title((status) => {
+        healthy(status);
+        status.set('adsb', 'connected');
+        status.setCallsign('SP-LOT');
+        status.recordAcceptedReport(new Date());
+        status.recordAcceptedReport(new Date());
+      }),
+    ).toBe('SP-LOT · 2 sent · Flight Tracker');
   });
 });

@@ -103,4 +103,56 @@ describe('Screen', () => {
     expect(out.all).toContain('[1;1H');
     expect(out.all).toContain('[2;1H');
   });
+
+  it('borrows the window title and hands it back', () => {
+    const out = new FakeOutput();
+    const screen = new Screen(out);
+
+    screen.start();
+
+    expect(out.all).toContain('[22;2t');
+
+    out.written = [];
+    screen.stop();
+
+    expect(out.all).toContain('[23;2t');
+  });
+
+  it('sets the window title', () => {
+    const out = new FakeOutput();
+    const screen = new Screen(out);
+    screen.start();
+    out.written = [];
+
+    screen.title('SP-LOT · 12 sent');
+
+    expect(out.all).toContain(']0;SP-LOT · 12 sent');
+  });
+
+  it('writes the title again only when it changed', () => {
+    const out = new FakeOutput();
+    const screen = new Screen(out);
+    screen.start();
+    screen.title('one');
+    out.written = [];
+
+    screen.title('one');
+
+    expect(out.written).toEqual([]);
+
+    screen.title('two');
+
+    expect(out.all).toContain(']0;two');
+  });
+
+  it('strips control characters that would end the escape early', () => {
+    const out = new FakeOutput();
+    const screen = new Screen(out);
+    screen.start();
+    out.written = [];
+
+    screen.title(`SP${String.fromCharCode(7)}${String.fromCharCode(27)}LOT`);
+
+    expect(out.all).toContain(']0;SPLOT');
+  });
 });

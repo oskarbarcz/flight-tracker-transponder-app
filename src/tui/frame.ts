@@ -1,8 +1,19 @@
-import type { ConnectionState, StatusSnapshot } from '../core/status';
+import type {
+  ConnectionName,
+  ConnectionState,
+  StatusSnapshot,
+} from '../core/status';
 
 export const MIN_COLUMNS = 24;
 export const SIDE_BY_SIDE_COLUMNS = 56;
 export const LOG_ROWS = 8;
+
+const TITLE_SUFFIX = 'Flight Tracker';
+
+// Discord is deliberately absent: presence failing is worth a marker on the
+// dashboard, but it is not worth shouting about from a background tab.
+const TITLE_CRITICAL: ConnectionName[] = ['simulator', 'adsb', 'api'];
+const TITLE_BROKEN: ConnectionState[] = ['disconnected', 'unauthorised'];
 
 const MARKERS: Record<ConnectionState, string> = {
   connected: '●',
@@ -54,6 +65,27 @@ export function renderFrame(input: FrameInput): string[] {
   );
 
   return lines;
+}
+
+// What the terminal puts in its tab or titlebar, which is all the pilot sees
+// once the window is behind the simulator. Trouble outranks progress: a feed
+// that has stopped is the one thing worth noticing from over there.
+export function renderTitle(status: StatusSnapshot): string {
+  // Not `!== 'connected'`: waiting-for-flight is where adsb sits whenever
+  // nobody is flying, which is the quiet case below rather than a fault.
+  const broken = TITLE_CRITICAL.find((name) =>
+    TITLE_BROKEN.includes(status.connections[name]),
+  );
+
+  if (broken !== undefined) {
+    return `${broken} ${status.connections[broken]} · ${TITLE_SUFFIX}`;
+  }
+
+  if (status.callsign === null) {
+    return `no flight · ${TITLE_SUFFIX}`;
+  }
+
+  return `${status.callsign} · ${status.publishedCount} sent · ${TITLE_SUFFIX}`;
 }
 
 function promptLine(prompt: FramePrompt): string {

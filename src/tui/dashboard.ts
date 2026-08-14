@@ -1,6 +1,6 @@
 import type { StatusRegistry } from '../core/status';
 import type { PromptInput } from '../platform/prompt';
-import { type FramePrompt, renderFrame } from './frame';
+import { type FramePrompt, renderFrame, renderTitle } from './frame';
 import type { Screen } from './screen';
 
 const REFRESH_MS = 250;
@@ -79,9 +79,14 @@ export class Dashboard {
   }
 
   render(): void {
+    const status = this.status.snapshot();
+
+    // Screen swallows a title it has already set, so this costs a write only
+    // when something the pilot would notice has actually moved.
+    this.screen.title(renderTitle(status));
     this.screen.paint(
       renderFrame({
-        status: this.status.snapshot(),
+        status,
         version: this.version,
         columns: this.columns(),
         logs: this.logs,
