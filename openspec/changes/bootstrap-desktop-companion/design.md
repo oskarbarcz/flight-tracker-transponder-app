@@ -137,12 +137,39 @@ Reports that fail to publish go to a bounded FIFO queue (cap 3600 — one hour a
 retried with backoff, oldest dropped first. The API sorts and deduplicates by timestamp, so
 late arrivals are harmless; a gap is not.
 
-### Squawk is BCD
+### Squawk is BCD, but not always
 
 `TRANSPONDER CODE:1` returns binary-coded decimal: squawk 1200 arrives as `0x1200`. The
 ADS-B payload wants the four digits as a string. Format the integer as hex, take the low four
 digits. Getting this wrong yields plausible-looking wrong squawks (4608 for 1200), which is
 why it is called out here and covered by a unit test rather than left to the implementer.
+
+Not every aircraft honours it, though, and the first real flight found one that did not: the
+BCD reading of what it returned was not four octal digits, the squawk was therefore left out,
+and the consequence was the whole feed stopping — see below. So read BCD first, since that is
+what MSFS documents, then the plain decimal, and publish `2000` if it is neither — the ICAO
+code for an aircraft that has not been assigned one, which is exactly what is true here.
+
+### Every field is required, so nothing is omitted
+
+`CreatePositionRequest` lists all thirteen fields under `required`. Omitting a value the
+simulator did not supply — the tidier-looking choice, and the one this design originally made
+— is answered `400`, and because the refused report sits at the head of the retry queue, one
+missing field stops every report behind it. A value that is absent travels as a zero.
+
+The queue is for an outage, not for a refusal. A `4xx` other than `401`, `403`, `408` and
+`429` will not read differently on the tenth attempt, so that report is discarded and counted
+as dropped and the next one is tried at once. And the body of the refusal is read: a `400`
+logged as a bare status code is the same bug report with the evidence torn off.
+
+### Transmission is a switch the pilot holds
+
+Position reporting is on by default, which is the unattended behaviour a pilot checked in for
+a flight wants. But the hand-typed callsign override exists precisely for the cases that are
+not that — a test, a look at the dashboard, someone else's callsign typed by mistake — and it
+used to start broadcasting the pilot's position the instant it was accepted, with quitting as
+the only way to stop. One key toggles it; off is `standby`, the transponder's own word, and it
+queues nothing so switching back on does not backfill a gap that was asked for.
 
 ### Development happens on macOS; Windows is a target, not a workstation
 

@@ -13,7 +13,7 @@ describe('previewFrame', () => {
   it('shows every marker, so no colour goes unexercised', () => {
     const frame = previewFrame('0.3.0');
 
-    for (const marker of ['●', '○', '!', '~']) {
+    for (const marker of ['●', '○', '!', '~', '◌']) {
       expect(frame).toContain(marker);
     }
   });

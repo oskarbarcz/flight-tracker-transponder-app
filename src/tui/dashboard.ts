@@ -7,28 +7,47 @@ const REFRESH_MS = 250;
 const LOG_CAPACITY = 200;
 const LOGS_KEY = 'l';
 const CALLSIGN_KEY = 'c';
+const SIGN_IN_KEY = 's';
+const TRANSMIT_KEY = 't';
 const CANCEL = '\u0003';
 const ESCAPE = '\u001b';
 const ENTER = ['\r', '\n'];
 const BACKSPACE = ['\u0008', '\u007f'];
 const MAX_CALLSIGN = 12;
+const MAX_CREDENTIAL = 128;
 
 export type Columns = () => number;
 
 export type DashboardHandlers = {
   onQuit: () => void;
   onCallsign: (callsign: string | null) => void;
+  onSignIn: (email: string, password: string) => void;
+  onTransmit: () => void;
 };
 
 const IGNORE: DashboardHandlers = {
   onQuit: () => undefined,
   onCallsign: () => undefined,
+  onSignIn: () => undefined,
+  onTransmit: () => undefined,
+};
+
+// One line of the frame, borrowed for one answer. A password is the reason the
+// masking and the length live here rather than in the caller: the frame paints
+// what it is handed, and it should never be handed a password.
+type Field = {
+  label: string;
+  hint: string;
+  masked: boolean;
+  maxLength: number;
+  submit: (value: string) => void;
 };
 
 export class Dashboard {
   private readonly logs: string[] = [];
   private showLogs = false;
-  private draft: string | null = null;
+  private field: Field | null = null;
+  private draft = '';
   private timer: ReturnType<typeof setInterval> | null = null;
   private listener: ((chunk: string) => void) | null = null;
   private handlers: DashboardHandlers = IGNORE;
@@ -78,6 +97,19 @@ export class Dashboard {
     this.render();
   }
 
+  // For the outcome of something the pilot just asked for. A sign-in that
+  // failed silently is indistinguishable from one that was never offered, and
+  // the reason is already written to the pane — it just is not being looked at.
+  revealLogs(): void {
+    if (this.showLogs) {
+      this.render();
+
+      return;
+    }
+
+    this.toggleLogs();
+  }
+
   render(): void {
     const status = this.status.snapshot();
 
@@ -97,9 +129,57 @@ export class Dashboard {
   }
 
   private prompt(): FramePrompt | null {
-    return this.draft === null
-      ? null
-      : { label: 'callsign', value: this.draft };
+    const field = this.field;
+
+    if (field === null) {
+      return null;
+    }
+
+    return {
+      label: field.label,
+      value: field.masked ? '*'.repeat(this.draft.length) : this.draft,
+      hint: field.hint,
+    };
+  }
+
+  private ask(field: Field): void {
+    this.field = field;
+    this.draft = '';
+    this.render();
+  }
+
+  private askCallsign(): void {
+    this.ask({
+      label: 'callsign',
+      hint: 'enter to set · empty follows the flight · esc cancels',
+      masked: false,
+      maxLength: MAX_CALLSIGN,
+      submit: (typed) => this.handlers.onCallsign(typed === '' ? null : typed),
+    });
+  }
+
+  // Two fields, one after the other, because the frame has one line to spare
+  // and a pilot who is signing in is not doing anything else.
+  private askSignIn(): void {
+    this.ask({
+      label: 'email',
+      hint: 'enter for the password · esc cancels',
+      masked: false,
+      maxLength: MAX_CREDENTIAL,
+      submit: (email) => {
+        if (email === '') {
+          return;
+        }
+
+        this.ask({
+          label: 'password',
+          hint: 'enter signs in · esc cancels',
+          masked: true,
+          maxLength: MAX_CREDENTIAL,
+          submit: (password) => this.handlers.onSignIn(email, password),
+        });
+      },
+    });
   }
 
   private listen(): void {
@@ -109,7 +189,7 @@ export class Dashboard {
 
     const listener = (chunk: string): void => {
       for (const character of chunk) {
-        if (this.draft === null) {
+        if (this.field === null) {
           this.command(character);
         } else {
           this.edit(character);
@@ -140,40 +220,62 @@ export class Dashboard {
     }
 
     if (key === CALLSIGN_KEY) {
-      this.draft = '';
+      this.askCallsign();
+
+      return;
+    }
+
+    if (key === SIGN_IN_KEY) {
+      this.askSignIn();
+
+      return;
+    }
+
+    if (key === TRANSMIT_KEY) {
+      this.handlers.onTransmit();
       this.render();
     }
   }
 
   private edit(character: string): void {
     if (character === ESCAPE || character === CANCEL) {
-      this.draft = null;
+      this.field = null;
+      this.draft = '';
       this.render();
 
       return;
     }
 
     if (ENTER.includes(character)) {
-      const typed = (this.draft ?? '').trim();
-      this.draft = null;
-      this.handlers.onCallsign(typed === '' ? null : typed);
+      const field = this.field;
+      // A password is taken exactly as typed; everything else is trimmed,
+      // because a trailing space in a callsign is a typo and in a password it
+      // is a character.
+      const typed = field?.masked === true ? this.draft : this.draft.trim();
+
+      this.field = null;
+      this.draft = '';
+      field?.submit(typed);
       this.render();
 
       return;
     }
 
     if (BACKSPACE.includes(character)) {
-      this.draft = (this.draft ?? '').slice(0, -1);
+      this.draft = this.draft.slice(0, -1);
       this.render();
 
       return;
     }
 
-    if (!printable(character) || (this.draft ?? '').length >= MAX_CALLSIGN) {
+    if (
+      !printable(character) ||
+      this.draft.length >= (this.field?.maxLength ?? MAX_CALLSIGN)
+    ) {
       return;
     }
 
-    this.draft = `${this.draft ?? ''}${character}`;
+    this.draft = `${this.draft}${character}`;
     this.render();
   }
 
@@ -188,8 +290,11 @@ export class Dashboard {
   }
 }
 
+// Anything that is not a control character. Narrower than that used to mean a
+// pilot whose password has an accent in it could not type it and would never
+// be told why; the escapes that would smear the frame are all below space.
 function printable(character: string): boolean {
   const code = character.charCodeAt(0);
 
-  return code >= 32 && code <= 126;
+  return code >= 32 && code !== 127;
 }

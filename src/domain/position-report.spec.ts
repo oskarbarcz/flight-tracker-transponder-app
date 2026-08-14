@@ -2,6 +2,7 @@ import {
   decodeSquawk,
   isEmergencySquawk,
   isPublishable,
+  NO_SQUAWK,
   toPositionReport,
 } from './position-report';
 import type { SimSample } from './sim-sample';
@@ -35,12 +36,22 @@ describe('decodeSquawk', () => {
     expect(decodeSquawk(code)).toBe(expected);
   });
 
-  it('does not mistake the BCD value for a decimal one', () => {
+  it('reads the BCD spelling first, since that is what MSFS documents', () => {
     expect(decodeSquawk(4608)).not.toBe('4608');
     expect(decodeSquawk(0x1200)).toBe('1200');
   });
 
-  it.each([[0x1288], [0x9999], [-1], [1.5]])(
+  // The aircraft that hands back a plain decimal is the reason the whole feed
+  // used to stop: its BCD reading is not four octal digits, the squawk was
+  // left out, and a report missing a field is answered 400.
+  it.each([
+    [4744, '4744'],
+    [7000, '7000'],
+  ])('falls back to the decimal spelling for %s', (code, expected) => {
+    expect(decodeSquawk(code)).toBe(expected);
+  });
+
+  it.each([[0x9999], [-1], [1.5]])(
     'reports nothing for the impossible code %s',
     (code) => {
       expect(decodeSquawk(code)).toBeUndefined();
@@ -95,24 +106,64 @@ describe('toPositionReport', () => {
     expect(report.verticalRate).toBe(-1850);
   });
 
-  it('omits a value the simulator did not supply rather than sending zero', () => {
+  // The service lists all thirteen fields as required, so leaving one out
+  // costs the whole report — and, because the report sits at the head of the
+  // queue being retried, every report behind it too.
+  it('sends every field the contract requires, whatever the simulator withheld', () => {
+    const report = toPositionReport(
+      sample({
+        groundSpeed: Number.NaN,
+        verticalRate: Number.NaN,
+        transponderCodeBcd: 0x9999,
+      }),
+      'AAL4908',
+    );
+
+    for (const field of [
+      'callsign',
+      'date',
+      'latitude',
+      'longitude',
+      'altitude',
+      'groundSpeed',
+      'track',
+      'verticalRate',
+      'squawk',
+      'isOnGround',
+      'alert',
+      'emergency',
+      'spi',
+    ]) {
+      expect(report).toHaveProperty(field);
+    }
+  });
+
+  it('sends a zero for a value the simulator did not supply', () => {
     const report = toPositionReport(
       sample({ groundSpeed: Number.NaN, verticalRate: Number.NaN }),
       'AAL4908',
     );
 
-    expect(report).not.toHaveProperty('groundSpeed');
-    expect(report).not.toHaveProperty('verticalRate');
+    expect(report.groundSpeed).toBe(0);
+    expect(report.verticalRate).toBe(0);
     expect(report.altitude).toBe(35000);
   });
 
-  it('omits the squawk when the transponder value makes no sense', () => {
+  // Pinned to the literal, not to the constant: 2000 is the ICAO code for an
+  // aircraft with no assignment, and swapping it for something a controller
+  // would read as a real assignment should fail a test rather than pass one.
+  it('falls back to 2000, the code for an aircraft with no assignment', () => {
+    expect(NO_SQUAWK).toBe('2000');
+  });
+
+  it('squawks the unknown code when the transponder value makes no sense', () => {
     const report = toPositionReport(
       sample({ transponderCodeBcd: 0x9999 }),
       'AAL4908',
     );
 
-    expect(report).not.toHaveProperty('squawk');
+    expect(report.squawk).toBe(NO_SQUAWK);
+    expect(report.emergency).toBe(false);
   });
 
   it('reports the on-ground state as the simulator states it', () => {

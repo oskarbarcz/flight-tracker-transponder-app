@@ -12,10 +12,26 @@ only the resulting tokens, and renew the short-lived access token from the refre
 before it expires. The password SHALL NOT be stored. A refresh that fails because the session
 is gone SHALL leave the app running and prompt the pilot to sign in again.
 
+Signing in SHALL be reachable for as long as the app is running, and not only in the moments
+before the dashboard takes the console. The outcome of an attempt SHALL be shown to the pilot
+rather than only written to the log file, and the password SHALL NOT be echoed.
+
 #### Scenario: First run
 
 - **WHEN** the app starts with no stored session
 - **THEN** it prompts for sign-in and does not publish anything until it succeeds
+
+#### Scenario: The first attempt was declined or abandoned
+
+- **WHEN** sign-in is cancelled, or fails every attempt, and the dashboard takes the console
+- **THEN** the app names the key that asks again, and pressing it prompts for the credentials
+  without the pilot restarting anything
+
+#### Scenario: Signing in while the app is already running
+
+- **WHEN** the pilot signs in from the dashboard
+- **THEN** the current flight is looked up immediately rather than at the next poll, and the
+  result of the attempt is put in front of the pilot
 
 #### Scenario: Access token expires during a flight
 

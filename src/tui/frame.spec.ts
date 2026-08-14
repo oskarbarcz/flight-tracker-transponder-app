@@ -120,9 +120,41 @@ describe('renderFrame', () => {
 
   it('tells the pilot how to reach the logs and how to quit', () => {
     expect(frame(80).join('\n')).toContain(
-      'c callsign · l show logs · ctrl-c quit',
+      's sign in · c callsign · t standby · l show logs · ctrl-c quit',
     );
     expect(frame(80, undefined, [], true).join('\n')).toContain('l hide logs');
+  });
+
+  // Losing the session used to leave `api ! unauthorised` on screen with
+  // nothing on the frame saying how to get out of it.
+  it('names the sign-in key, which is the only way out of unauthorised', () => {
+    expect(
+      frame(80, (status) => status.set('api', 'unauthorised')).join('\n'),
+    ).toContain('s sign in');
+  });
+
+  it('offers the opposite of whatever the transponder is doing', () => {
+    expect(
+      frame(80, (status) => status.set('adsb', 'standby')).join('\n'),
+    ).toContain('t transmit');
+    expect(
+      frame(80, (status) => status.set('adsb', 'connected')).join('\n'),
+    ).toContain('t standby');
+  });
+
+  it('shows standby as its own state rather than as a fault', () => {
+    process.env.NO_COLOR = '1';
+
+    try {
+      const lines = frame(80, (status) => status.set('adsb', 'standby')).join(
+        '\n',
+      );
+
+      expect(lines).toContain('adsb      ◌ standby');
+      expect(lines).not.toContain('adsb      ○');
+    } finally {
+      delete process.env.NO_COLOR;
+    }
   });
 
   it('survives an absurdly narrow terminal', () => {
@@ -174,6 +206,18 @@ describe('renderTitle', () => {
 
   it('treats waiting for a flight as quiet rather than broken', () => {
     expect(title(healthy)).toBe('no flight · Flight Tracker');
+  });
+
+  // The switch is the pilot's, but forgetting it is how a flight ends up with
+  // no track at all, so the tab says so from behind the simulator.
+  it('says so from the tab when transmission is switched off', () => {
+    expect(
+      title((status) => {
+        healthy(status);
+        status.setCallsign('SP-LOT');
+        status.set('adsb', 'standby');
+      }),
+    ).toBe('standby · Flight Tracker');
   });
 
   it('shows the callsign and how much it has sent once flying', () => {

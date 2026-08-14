@@ -1,5 +1,6 @@
-import { StatusRegistry } from '../core/status';
-import { renderFrame } from './frame';
+import { CONNECTION_STATES, StatusRegistry } from '../core/status';
+import { marker, renderFrame } from './frame';
+import { dim, toVisibleWidth } from './style';
 
 export const PREVIEW_COLUMNS = 80;
 
@@ -11,7 +12,6 @@ export const PREVIEW_COLUMNS = 80;
 export function previewFrame(version: string): string {
   const status = new StatusRegistry();
 
-  // One connection per state, so every marker and every colour appears.
   status.set('api', 'connected');
   status.set('simulator', 'waiting-for-flight');
   status.set('adsb', 'unauthorised');
@@ -23,12 +23,29 @@ export function previewFrame(version: string): string {
   status.recordAcceptedReport(new Date(0));
   status.setDroppedCount(1);
 
-  return renderFrame({
-    status: status.snapshot(),
-    version,
-    columns: PREVIEW_COLUMNS,
-    logs: ['preview frame: connected to nothing'],
-    showLogs: true,
-    prompt: null,
-  }).join('\n');
+  return [
+    ...renderFrame({
+      status: status.snapshot(),
+      version,
+      columns: PREVIEW_COLUMNS,
+      logs: ['preview frame: connected to nothing'],
+      showLogs: true,
+      prompt: null,
+    }),
+    '',
+    legend(),
+  ].join('\n');
+}
+
+// There are more states than there are connections to hold them, so the
+// glyphs and their colours are listed rather than staged: the frame cannot
+// show `standby` and `disconnected` at once, and a marker nobody drew is a
+// marker nobody would notice arriving as a letter on an OEM code page.
+function legend(): string {
+  const markers = CONNECTION_STATES.map(marker).join(' ');
+
+  return toVisibleWidth(
+    `  markers ${markers}  ${dim('- all five should be shapes, not letters')}`,
+    PREVIEW_COLUMNS,
+  );
 }

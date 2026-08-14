@@ -60,22 +60,86 @@ while the pilot has no current flight.
 - **WHEN** the aircraft's `ATC ID` differs from the flight's callsign
 - **THEN** the flight's callsign is used and both values are shown in diagnostics
 
-### Requirement: Reports carry the full state the ADS-B contract accepts
+### Requirement: Reports carry every field the ADS-B contract requires
 
 The system SHALL send position, altitude, ground speed, track, vertical rate, on-ground
-state and squawk with each report, and SHALL decode the simulator's binary-coded-decimal
-transponder value into the four squawk digits. A value the simulator does not supply SHALL be
-omitted rather than sent as zero.
+state and squawk with each report. `CreatePositionRequest` lists all thirteen fields as
+required, so a value the simulator does not supply SHALL travel as a zero rather than be
+omitted: a report missing one field is answered `400` and stored nowhere.
+
+The system SHALL decode the simulator's transponder value into four squawk digits, reading it
+as binary-coded decimal first because that is what MSFS documents, and as a plain decimal
+second because not every aircraft honours that. A value that is neither SHALL be published as
+`2000` — the ICAO code for an aircraft with no assignment — rather than left out.
 
 #### Scenario: Squawk is decoded from BCD
 
 - **WHEN** the simulator reports transponder code `0x1200`
 - **THEN** the published squawk is `1200`
 
+#### Scenario: The aircraft hands back a decimal transponder code
+
+- **WHEN** the simulator reports `7000` rather than `0x7000`
+- **THEN** the published squawk is `7000`, and the report is not left without one
+
+#### Scenario: The transponder value is not a squawk under either reading
+
+- **WHEN** the simulator reports a value that is four octal digits in neither spelling
+- **THEN** the published squawk is `2000`, and the report is published rather than refused
+
 #### Scenario: The aircraft is on the ground
 
 - **WHEN** the simulator reports the aircraft on the ground
 - **THEN** the report states on-ground rather than inferring it from altitude or speed
+
+### Requirement: A report the service refuses does not block the ones behind it
+
+The system SHALL distinguish a service that cannot take a report now from one that will never
+take this report. A response that will not change on a retry SHALL cause that report to be
+discarded and counted as dropped, and the next report SHALL be attempted immediately. The
+reason the service gave SHALL be reported, not just the status code.
+
+#### Scenario: One malformed report
+
+- **WHEN** the service answers `400` to a report
+- **THEN** that report is dropped, the reason the service gave is shown, and the reports
+  behind it are published
+
+#### Scenario: The service asks us to come back later
+
+- **WHEN** the service answers `429` or `503`
+- **THEN** the report is kept and retried with backoff, as an outage rather than a refusal
+
+### Requirement: The pilot can stop transmitting without stopping the app
+
+The system SHALL let the pilot switch position transmission off and on while it runs, and
+SHALL report which of the two it is doing. Transmission SHALL be on unless the pilot switches
+it off, so a flight that never asks behaves as it always did. While it is off, nothing SHALL
+be published and nothing SHALL be queued for later.
+
+#### Scenario: Switched off mid-flight
+
+- **WHEN** the pilot switches transmission off
+- **THEN** publishing stops, the state reads as standby, and the switch survives a change of
+  current flight
+
+#### Scenario: Switched back on
+
+- **WHEN** the pilot switches transmission on again
+- **THEN** publishing resumes from the next sample, and the positions from before the switch
+  are not backfilled into the gap the pilot asked for
+
+### Requirement: A hand-typed callsign is checked before it is published under
+
+The system SHALL check a callsign the pilot types by hand and refuse one the ADS-B service
+would not accept, telling the pilot why. A callsign the API supplies SHALL be taken as
+authoritative and published unchanged.
+
+#### Scenario: A typo in the override
+
+- **WHEN** the pilot types a callsign that is too short, too long, or not letters, digits and
+  hyphens
+- **THEN** the override is refused with a reason, and nothing is published under it
 
 ### Requirement: Publication rate follows the phase of flight
 
