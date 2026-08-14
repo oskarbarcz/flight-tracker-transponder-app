@@ -179,6 +179,7 @@ export class PositionFeed {
     try {
       await this.adsb.publish(report);
       this.status.set('adsb', 'connected');
+      this.status.setFault('adsb', null);
       this.status.recordAcceptedReport(new Date(report.date));
       this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
       this.retryNotBefore = 0;
@@ -189,12 +190,19 @@ export class PositionFeed {
       if (error instanceof AdsbTokenRejectedError) {
         this.holdOffRetrying();
         this.status.set('adsb', 'unauthorised');
+        this.status.setFault(
+          'adsb',
+          'the ADS-B client token was rejected; nothing is being published',
+        );
         this.logger.error('ADS-B service rejected the client token');
 
         return 'retry';
       }
 
       if (error instanceof AdsbReportRejectedError) {
+        // The frame carries the reason too: a report the service will never
+        // accept is dropped silently otherwise, and `sent 0` is all a pilot sees.
+        this.status.setFault('adsb', error.message);
         this.noteRejection(error.message);
 
         return 'rejected';
@@ -202,6 +210,10 @@ export class PositionFeed {
 
       this.holdOffRetrying();
       this.status.set('adsb', 'disconnected');
+      this.status.setFault(
+        'adsb',
+        `${describeError(error)} (retrying in ${this.retryDelayMs}ms)`,
+      );
       this.logger.warn(
         `publish failed, retrying in ${this.retryDelayMs}ms: ${describeError(error)}`,
       );

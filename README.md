@@ -121,10 +121,11 @@ no flight started you will see `no current flight, publishing suspended` and an 
 │ oskar@barcz.me            ││ airframe: [B77W] * tail: [SP-LVD]             │
 └───────────────────────────┘└───────────────────────────────────────────────┘
 ┌─ 3 XPNDR ─────────────────┐┌─ 4 COMMS ─────────────────────────────────────┐
-│ tail:   [SP-LVD]          ││ discord:  ● connected                         │
-│ squawk: [2000]            ││ presence: [ON]                                │
-│ mode:   [MODE C]          ││ BER -> WAW                                    │
-│ spd:    451kt             ││ Cruise, landing at 15:50z                     │
+│ sim:    ● connected       ││ discord:  ● connected                         │
+│ tail:   [SP-LVD]          ││ presence: [ON]                                │
+│ squawk: [2000]            ││ BER -> WAW                                    │
+│ mode:   [MODE C]          ││ Cruise, landing at 15:50z                     │
+│ spd:    451kt             ││                                               │
 │ call:   11:30:30z         ││                                               │
 └───────────────────────────┘└───────────────────────────────────────────────┘
 ┌─ 5 STATUS ───────────────────────────────────────────────────────────────────┐
@@ -137,7 +138,8 @@ costs no extra request. When the airport names do not fit — half of an eighty-
 does not hold them — the route falls back to the codes alone, because a name cut off mid-word
 identifies an airport less well than `[WAW]` does.
 
-**3 XPNDR** is the aircraft, not the network. `tail` here is the simulator's own `ATC ID` while
+**3 XPNDR** is the aircraft, not the network. `sim` is the SimConnect link every other row in
+the section depends on. `tail` here is the simulator's own `ATC ID` while
 section 2 shows the tail Flight Tracker assigned, so a mismatch between the two is visible
 rather than mysterious. `squawk` and `spd` are read off every sample even while nothing is being
 published, because they are the aircraft's state either way. `mode` is `MODE C` when the
@@ -146,6 +148,25 @@ accepted, in zulu and to the second: it is what distinguishes a feed that stoppe
 is a second old.
 
 **4 COMMS** is the local Discord socket and whether an activity is currently published.
+
+When something is wrong, a line appears under the sections naming it and saying why:
+
+```
+  ! simulator — The simulator is not running: its SimConnect pipe is absent.
+                (start MSFS and load a flight; retrying)
+```
+
+That is the point of it. `sim: ○ disconnected` says the link is down; only the message says the
+simulator is not running, or that the host in `SIMCONNECT_HOST` is refusing the port and the
+firewall is the thing to look at. The reason used to live in the debug pane, which is the one
+place nobody looks while wondering why nothing works. Long messages wrap to the gutter rather
+than being cut off — the half that gets truncated is the half that says what to do — and are
+bounded at three lines, because a validation error from the ADS-B service can be four hundred
+characters of JSON. The whole thing is always in the debug pane and the log file.
+
+Only one fault is shown at a time, the most actionable first: `simulator`, then `tracker`, then
+`adsb`, then `discord`. A pilot can start the simulator; they can do very little about the ADS-B
+service being down.
 
 **5 STATUS** is one line, because three services and their versions is a sentence rather than a
 table, and reading it left to right is how anyone reports a fault. `adsb` and `tracker` report

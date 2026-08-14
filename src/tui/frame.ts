@@ -79,6 +79,7 @@ export function renderFrame(input: FrameInput): string[] {
     ...pair(transponder(status), comms(status), width),
     ...serviceStatus(status, input.version)(width),
     '',
+    ...faultLines(status, width),
   ];
 
   if (input.showLogs) {
@@ -204,6 +205,10 @@ function airport(place: ServiceAirport | null, withName: boolean): string {
 
 function transponder(status: StatusSnapshot): (width: number) => string[] {
   return box('3 XPNDR', [
+    // The link that feeds every other row here. Dropping it from the frame
+    // altogether left a pilot whose simulator would not connect with nothing on
+    // screen to say so.
+    `sim:    ${marker(status.connections.simulator)} ${status.connections.simulator}`,
     `tail:   ${field(status.aircraftIdentifier)}`,
     `squawk: ${field(status.squawk)}`,
     // A transponder reports its mode, not its network: MODE C is what it is
@@ -239,6 +244,7 @@ function comms(status: StatusSnapshot): (width: number) => string[] {
     `presence: ${publishing ? `[${green('ON')}]` : `[${dim('OFF')}]`}`,
     presenceDetails === null ? '' : dim(presenceDetails),
     presenceState === null ? '' : dim(presenceState),
+    '',
     '',
   ]);
 }
@@ -365,4 +371,91 @@ function headingRule(head: string, inner: number): string {
   return width > inner
     ? toVisibleWidth(head, inner)
     : `${head}${dim('─'.repeat(inner - width))}`;
+}
+
+// Whichever connection is unhappy, said in words, on its own full-width line.
+// A state tells a pilot that the simulator is not connected; only the reason
+// tells them the sim is not running, or that the host in SIMCONNECT_HOST is
+// refusing the port. That reason used to live in the debug pane, which is the
+// one place nobody looks while wondering why nothing works.
+//
+// Ordered by what the pilot can do about it, most actionable first.
+const FAULT_ORDER: ConnectionName[] = ['simulator', 'api', 'adsb', 'discord'];
+
+function faultLines(status: StatusSnapshot, width: number): string[] {
+  const name = FAULT_ORDER.find((each) => status.faults[each] !== null);
+
+  if (name === undefined) {
+    return [];
+  }
+
+  const label = `${red('!')} ${bold(name)} ${dim('—')} `;
+  const gutter = visibleWidth(label);
+  const room = Math.max(width - 4 - gutter, MIN_FAULT_ROOM);
+  const wrapped = wrap(status.faults[name] ?? '', room);
+
+  return [
+    ...wrapped.map((line, row) =>
+      indent(
+        row === 0 ? `${label}${line}` : `${' '.repeat(gutter)}${line}`,
+        width,
+      ),
+    ),
+    '',
+  ];
+}
+
+// Wrapped rather than truncated: the half of the message that gets cut is the
+// half that says what to do about it. Bounded, because a validation error from
+// the ADS-B service can be four hundred characters of JSON and the frame is not
+// the place to read all of it — the debug pane has the whole thing.
+const MAX_FAULT_ROWS = 3;
+const MIN_FAULT_ROOM = 16;
+
+function wrap(text: string, room: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+
+  for (const word of text.split(/\s+/).filter((part) => part !== '')) {
+    for (const piece of split(word, room)) {
+      if (line === '') {
+        line = piece;
+      } else if (line.length + 1 + piece.length <= room) {
+        line = `${line} ${piece}`;
+      } else {
+        lines.push(line);
+        line = piece;
+      }
+    }
+  }
+
+  if (line !== '') {
+    lines.push(line);
+  }
+
+  if (lines.length <= MAX_FAULT_ROWS) {
+    return lines.length === 0 ? [''] : lines;
+  }
+
+  const kept = lines.slice(0, MAX_FAULT_ROWS);
+  kept[MAX_FAULT_ROWS - 1] =
+    `${(kept[MAX_FAULT_ROWS - 1] ?? '').slice(0, Math.max(room - 2, 1))}…`;
+
+  return kept;
+}
+
+// A word with no spaces in it — a URL, a token, a stringified body — still has
+// to fit, so it is cut into pieces that do.
+function split(word: string, room: number): string[] {
+  if (word.length <= room) {
+    return [word];
+  }
+
+  const pieces: string[] = [];
+
+  for (let at = 0; at < word.length; at += room) {
+    pieces.push(word.slice(at, at + room));
+  }
+
+  return pieces;
 }
