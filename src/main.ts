@@ -2,6 +2,8 @@ import { loadConfig } from './config/config';
 import { envFilePaths, loadEnvFiles } from './config/env-file';
 import { type LogSink, Logger, streamSink } from './core/logger';
 import { Dashboard } from './tui/dashboard';
+import { previewFrame } from './tui/preview';
+import { useUtf8Console } from './platform/console-encoding';
 import { Screen } from './tui/screen';
 import { StatusRegistry } from './core/status';
 import { describeError, Supervisor } from './core/supervisor';
@@ -38,6 +40,15 @@ async function bootstrap(): Promise<void> {
     (line) => logSink(line),
   );
   const supervisor = new Supervisor(logger);
+
+  if (
+    process.platform === 'win32' &&
+    !(await useUtf8Console(process.platform))
+  ) {
+    logger.warn(
+      'could not switch the console to UTF-8, box drawing may be mojibake',
+    );
+  }
 
   const secrets = secretStoreFor(process.platform, process.cwd());
   const tokenStore =
@@ -254,8 +265,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const version = (): string => process.env.APP_VERSION ?? 'dev';
+
 if (process.argv.includes('--version')) {
-  process.stdout.write(`${process.env.APP_VERSION ?? 'dev'}\n`);
+  process.stdout.write(`${version()}\n`);
+} else if (process.argv.includes('--print-frame')) {
+  // Draws one dashboard frame and exits. CI uses it to prove the box drawing
+  // and colour survive into the compiled executable, and it doubles as the
+  // way to see on a real console whether the code page is behaving.
+  void useUtf8Console(process.platform).then(() => {
+    process.stdout.write(`${previewFrame(version())}\n`);
+  });
 } else {
   void bootstrap().catch((error: unknown) => {
     process.stderr.write(`failed to start: ${describeError(error)}\n`);

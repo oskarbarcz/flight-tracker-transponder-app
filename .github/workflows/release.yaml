@@ -46,6 +46,9 @@ jobs:
       - name: 'Check the executable carries the icon and properties'
         shell: 'pwsh'
         run: './scripts/check-icon.ps1'
+      - name: 'Check the dashboard renders from the executable'
+        shell: 'pwsh'
+        run: './scripts/check-frame.ps1'
       - name: 'Attach the executable to the GitHub release'
         shell: 'bash'
         run: "gh release upload $(jq -r '.version' package.json) dist/flight-tracker-transponder.exe"

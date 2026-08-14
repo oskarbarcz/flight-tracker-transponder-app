@@ -62,3 +62,6 @@ jobs:
       - name: 'Check the executable carries the icon and properties'
         shell: 'pwsh'
         run: './scripts/check-icon.ps1'
+      - name: 'Check the dashboard renders from the executable'
+        shell: 'pwsh'
+        run: './scripts/check-frame.ps1'

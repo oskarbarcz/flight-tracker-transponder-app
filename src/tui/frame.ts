@@ -3,6 +3,17 @@ import type {
   ConnectionState,
   StatusSnapshot,
 } from '../core/status';
+import {
+  amber,
+  bold,
+  cyan,
+  dim,
+  green,
+  red,
+  type Style,
+  toVisibleWidth,
+  visibleWidth,
+} from './style';
 
 export const MIN_COLUMNS = 24;
 export const SIDE_BY_SIDE_COLUMNS = 56;
@@ -21,6 +32,19 @@ const MARKERS: Record<ConnectionState, string> = {
   unauthorised: '!',
   'waiting-for-flight': '~',
 };
+
+// Kept apart from the glyphs so the colour is chosen per render rather than
+// once at import, which is what lets NO_COLOR be honoured at all.
+const MARKER_COLOURS: Record<ConnectionState, Style> = {
+  connected: green,
+  disconnected: red,
+  unauthorised: amber,
+  'waiting-for-flight': cyan,
+};
+
+function marker(state: ConnectionState): string {
+  return MARKER_COLOURS[state](MARKERS[state]);
+}
 
 export type FramePrompt = {
   label: string;
@@ -43,9 +67,9 @@ export function renderFrame(input: FrameInput): string[] {
   const lines = [
     '',
     wordmark(width, input.version),
-    indent('═'.repeat(width - 4), width),
+    indent(dim('═'.repeat(width - 4)), width),
     indent(
-      `api ${MARKERS[status.connections.api]} ${status.connections.api}`,
+      `api ${marker(status.connections.api)} ${status.connections.api}`,
       width,
     ),
     '',
@@ -89,16 +113,19 @@ export function renderTitle(status: StatusSnapshot): string {
 }
 
 function promptLine(prompt: FramePrompt): string {
-  return `${prompt.label} › ${prompt.value}█  enter to set · empty follows the flight · esc cancels`;
+  return (
+    `${prompt.label} › ${bold(prompt.value)}${cyan('█')}  ` +
+    dim('enter to set · empty follows the flight · esc cancels')
+  );
 }
 
 function wordmark(width: number, version: string): string {
-  const name = 'FLIGHT TRACKER · transponder';
-  const tag = `v${version}`;
-  const gap = width - 4 - name.length - tag.length;
+  const name = bold('FLIGHT TRACKER · transponder');
+  const tag = dim(`v${version}`);
+  const gap = width - 4 - visibleWidth(name) - visibleWidth(tag);
 
   return gap < 1
-    ? indent(toWidth(name, width - 4), width)
+    ? indent(toVisibleWidth(name, width - 4), width)
     : indent(`${name}${' '.repeat(gap)}${tag}`, width);
 }
 
@@ -119,9 +146,9 @@ function transponderRows(status: StatusSnapshot): string[] {
   const { connections, callsign, aircraftIdentifier } = status;
 
   return [
-    `simulator ${MARKERS[connections.simulator]} ${connections.simulator}`,
-    `adsb      ${MARKERS[connections.adsb]} ${connections.adsb}`,
-    `${callsign ?? '—'} · ${aircraftIdentifier ?? '—'}`,
+    `simulator ${marker(connections.simulator)} ${connections.simulator}`,
+    `adsb      ${marker(connections.adsb)} ${connections.adsb}`,
+    `${callsign === null ? '—' : bold(callsign)} · ${aircraftIdentifier ?? '—'}`,
     `sent ${status.publishedCount}  dropped ${status.droppedCount}`,
   ];
 }
@@ -130,7 +157,7 @@ function discordRows(status: StatusSnapshot): string[] {
   const { connections, presenceState, presenceDetails } = status;
 
   return [
-    `client   ${MARKERS[connections.discord]} ${connections.discord}`,
+    `client   ${marker(connections.discord)} ${connections.discord}`,
     `presence ${presenceDetails === null ? '—' : presenceDetails}`,
     presenceState ?? '',
     '',
@@ -140,12 +167,18 @@ function discordRows(status: StatusSnapshot): string[] {
 function box(title: string, rows: string[]): (width: number) => string[] {
   return (width) => {
     const inner = width - 2;
-    const head = `─ ${title} `;
+
+    // Composed segment by segment rather than wrapping the whole border in
+    // one style: a nested reset closes the outer style early and leaks the
+    // rest of the line.
+    const head = `${dim('─')} ${bold(title)} `;
 
     return [
-      `┌${headingRule(head, inner)}┐`,
-      ...rows.map((row) => `│${toWidth(` ${row}`, inner)}│`),
-      `└${'─'.repeat(Math.max(inner, 0))}┘`,
+      `${dim('┌')}${headingRule(head, inner)}${dim('┐')}`,
+      ...rows.map(
+        (row) => `${dim('│')}${toVisibleWidth(` ${row}`, inner)}${dim('│')}`,
+      ),
+      dim(`└${'─'.repeat(Math.max(inner, 0))}┘`),
     ];
   };
 }
@@ -166,31 +199,25 @@ function logPane(logs: string[], width: number): string[] {
   const padding = Array.from({ length: LOG_ROWS - recent.length }, () => '');
 
   return [
-    indent('─'.repeat(width - 4), width),
+    indent(dim('─'.repeat(width - 4)), width),
     ...[...recent, ...padding].map((line) =>
-      indent(toWidth(line, width - 4), width),
+      indent(toVisibleWidth(line, width - 4), width),
     ),
   ];
 }
 
 function hint(showLogs: boolean): string {
-  return `c callsign · l ${showLogs ? 'hide' : 'show'} logs · ctrl-c quit`;
+  return dim(`c callsign · l ${showLogs ? 'hide' : 'show'} logs · ctrl-c quit`);
 }
 
 function indent(text: string, width: number): string {
-  return toWidth(`  ${text}`, width);
-}
-
-function toWidth(text: string, length: number): string {
-  const room = Math.max(length, 0);
-
-  return text.length > room
-    ? text.slice(0, room)
-    : text + ' '.repeat(room - text.length);
+  return toVisibleWidth(`  ${text}`, width);
 }
 
 function headingRule(head: string, inner: number): string {
-  return head.length > inner
-    ? head.slice(0, inner)
-    : head + '─'.repeat(inner - head.length);
+  const width = visibleWidth(head);
+
+  return width > inner
+    ? toVisibleWidth(head, inner)
+    : `${head}${dim('─'.repeat(inner - width))}`;
 }

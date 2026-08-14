@@ -1,5 +1,6 @@
 import { StatusRegistry } from '../core/status';
 import { renderFrame, renderTitle, SIDE_BY_SIDE_COLUMNS } from './frame';
+import { visibleWidth } from './style';
 
 function frame(
   columns: number,
@@ -23,7 +24,30 @@ function frame(
 describe('renderFrame', () => {
   it('pads every line to the terminal width', () => {
     for (const line of frame(80)) {
-      expect(line.length).toBeLessThanOrEqual(80);
+      expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+    }
+  });
+
+  // The assertion above used to read `line.length`, which colour quietly
+  // broke: an escape adds characters and no columns, so a .length budget
+  // gets easier to satisfy the more styling you add.
+  it('fills the width in visible columns rather than characters', () => {
+    for (const line of frame(80).filter((line) => line !== '')) {
+      expect(visibleWidth(line)).toBe(80);
+      expect(line.length).toBeGreaterThan(80);
+    }
+  });
+
+  it('lays out identically with colour turned off', () => {
+    process.env.NO_COLOR = '1';
+
+    try {
+      for (const line of frame(80).filter((line) => line !== '')) {
+        expect(line).not.toContain('[0m');
+        expect(line.length).toBe(80);
+      }
+    } finally {
+      delete process.env.NO_COLOR;
     }
   });
 
@@ -105,7 +129,7 @@ describe('renderFrame', () => {
     expect(() => frame(1)).not.toThrow();
 
     for (const line of frame(1)) {
-      expect(line.length).toBeLessThanOrEqual(24);
+      expect(visibleWidth(line)).toBeLessThanOrEqual(24);
     }
   });
 });

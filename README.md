@@ -18,7 +18,7 @@ executable; the tray, autostart and a real flight are not. See
 
 ```bash
 npm install        # needs Node 26
-npm test           # 175 unit and integration tests
+npm test           # 190 unit and integration tests
 npm run lint       # biome check
 npm run lint:fix   # biome check --write
 npm start          # needs the environment in .env.example
@@ -45,7 +45,9 @@ cd C:\FlightTracker
 ```
 
 A sign-in is the only thing asked of a pilot. `--version` reports the build and exits, which is
-what CI smoke-tests.
+what CI smoke-tests. `--print-frame` draws one dashboard frame and exits — if the box drawing
+comes out as garbled letters rather than lines, the console is on an OEM code page and `chcp
+65001` before running fixes it.
 
 Every key in `.env.example` still works as an override — read from the real environment first,
 then `.env` in the working directory, then `.env` beside the executable, with nothing already set
