@@ -11,6 +11,7 @@ import { FileTokenStore, SecretTokenStore } from './api/token-store';
 import { ConsolePrompt } from './platform/prompt';
 import { secretStoreFor } from './platform/secret-store';
 import { promptForSignIn } from './api/sign-in';
+import { ReleaseClient } from './api/release.client';
 import {
   FlightTrackerClient,
   NotSignedInError,
@@ -61,6 +62,7 @@ async function bootstrap(): Promise<void> {
 
   const adsbToken = process.env.ADSB_CLIENT_TOKEN ?? '';
   const adsb = new AdsbClient(config.adsbBaseUrl, adsbToken);
+  const releases = new ReleaseClient();
 
   const presenceWriter = new IpcPresenceWriter(
     config.discordApplicationId,
@@ -173,9 +175,30 @@ async function bootstrap(): Promise<void> {
     }
   };
 
+  // One poll fills both section 1 and section 2: the crew comes off the same
+  // `/user/me` the current flight id already came from, so knowing who is
+  // signed in costs no extra request.
   const pollCurrentFlight = async (): Promise<void> => {
     try {
-      const flight = await api.getCurrentFlight();
+      const me = await api.getCurrentUser();
+      status.setCrew({ name: me.name, email: me.email });
+
+      const flight =
+        me.currentFlightId === null
+          ? null
+          : await api.getFlight(me.currentFlightId);
+
+      status.setService(
+        flight === null
+          ? null
+          : {
+              callsign: flight.callsign,
+              departure: flight.departure,
+              arrival: flight.arrival,
+              airframe: flight.airframe,
+              registration: flight.registration,
+            },
+      );
       applyCallsign(flight?.callsign ?? null);
       status.set('api', 'connected');
     } catch (error) {
@@ -184,6 +207,10 @@ async function bootstrap(): Promise<void> {
         error instanceof NotSignedInError
       ) {
         status.set('api', 'unauthorised');
+        // Section 1 says "not signed in" rather than keeping the name of a
+        // session the API has stopped accepting.
+        status.setCrew(null);
+        status.setService(null);
         applyCallsign(null);
       } else {
         status.set('api', 'disconnected');
@@ -224,6 +251,23 @@ async function bootstrap(): Promise<void> {
     );
   };
 
+  const signOut = (): void => {
+    void api.signOut().then(
+      () => {
+        status.set('api', 'unauthorised');
+        status.setCrew(null);
+        status.setService(null);
+        applyCallsign(null);
+        logger.info('signed out: press s to sign in again');
+        dashboard?.revealLogs();
+      },
+      (error: unknown) => {
+        logger.error(`sign-out failed: ${describeError(error)}`);
+        dashboard?.revealLogs();
+      },
+    );
+  };
+
   const toggleTransmitting = (): void => {
     positionFeed.setTransmitting(!positionFeed.isTransmitting);
   };
@@ -253,6 +297,7 @@ async function bootstrap(): Promise<void> {
       onQuit: () => void shutdown(),
       onCallsign: overrideCallsign,
       onSignIn: signIn,
+      onSignOut: signOut,
       onTransmit: toggleTransmitting,
     });
     process.stdout.on('resize', () => dashboard.resize());
@@ -334,6 +379,16 @@ async function bootstrap(): Promise<void> {
         await Promise.all([
           readVersion('api', () => api.version()),
           readVersion('adsb', () => adsb.version()),
+          releases.latest().then(
+            (latest) => status.setLatestRelease(latest),
+            (error: unknown) => {
+              // Only the update hint depends on this, and GitHub being
+              // unreachable is not something a pilot mid-flight needs told.
+              logger.debug(
+                `could not read the latest release: ${describeError(error)}`,
+              );
+            },
+          ),
         ]);
         await sleep(config.versionPollIntervalMs);
       }

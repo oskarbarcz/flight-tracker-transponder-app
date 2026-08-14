@@ -17,15 +17,25 @@ export function previewFrame(version: string): string {
   status.set('adsb', 'unauthorised');
   status.set('discord', 'disconnected');
 
-  // One known and one not, so section 3 draws both a version and the dash that
+  // One known and one not, so section 5 draws both a version and the dash that
   // stands in for one that could not be read.
   status.setServiceVersion('api', '3.24.0');
   status.setServiceVersion('adsb', null);
 
-  status.setCallsign('SP-LOT');
-  status.setAircraftIdentifier('A320');
+  status.setCrew({ name: 'Oskar Barcz', email: 'pilot@example.com' });
+  status.setService({
+    callsign: 'DLH5540',
+    departure: { iata: 'BER', icao: 'EDDB', name: 'Berlin' },
+    arrival: { iata: 'WAW', icao: 'EPWA', name: 'Warsaw Chopin' },
+    airframe: 'B77W',
+    registration: 'SP-LVD',
+  });
+
+  status.setCallsign('DLH5540');
+  status.setAircraftIdentifier('SP-LVD');
+  status.setTransponder('2000', 451.4);
   status.setPresence('Boarding', 'EPWA -> EDDF');
-  status.recordAcceptedReport(new Date(0));
+  status.recordAcceptedReport(new Date(Date.UTC(2026, 7, 14, 11, 30, 30)));
   status.setDroppedCount(1);
 
   return [

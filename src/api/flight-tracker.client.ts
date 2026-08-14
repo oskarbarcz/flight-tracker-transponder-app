@@ -9,9 +9,25 @@ export type DiscordPresencePayload = {
   largeImageKey: string;
 };
 
+export type Airport = {
+  iata: string | null;
+  icao: string | null;
+  name: string | null;
+};
+
 export type CurrentFlight = {
   id: string;
   callsign: string;
+  departure: Airport | null;
+  arrival: Airport | null;
+  airframe: string | null;
+  registration: string | null;
+};
+
+export type CurrentUser = {
+  name: string;
+  email: string;
+  currentFlightId: string | null;
 };
 
 export class SessionExpiredError extends Error {
@@ -113,21 +129,57 @@ export class FlightTrackerClient {
     await this.tokenStore.clear();
   }
 
-  async getCurrentFlight(): Promise<CurrentFlight | null> {
+  async getCurrentUser(): Promise<CurrentUser> {
     const me = (await this.get('/api/v1/user/me')) as {
-      currentFlightId: string | null;
+      name?: unknown;
+      email?: unknown;
+      currentFlightId?: unknown;
     };
+
+    return {
+      name: typeof me.name === 'string' ? me.name : '',
+      email: typeof me.email === 'string' ? me.email : '',
+      currentFlightId:
+        typeof me.currentFlightId === 'string' ? me.currentFlightId : null,
+    };
+  }
+
+  async getCurrentFlight(): Promise<CurrentFlight | null> {
+    const me = await this.getCurrentUser();
 
     if (me.currentFlightId === null) {
       return null;
     }
 
-    const flight = (await this.get(`/api/v1/flight/${me.currentFlightId}`)) as {
+    return this.getFlight(me.currentFlightId);
+  }
+
+  async getFlight(id: string): Promise<CurrentFlight> {
+    const flight = (await this.get(`/api/v1/flight/${id}`)) as {
       id: string;
       callsign: string;
+      airports?: unknown;
+      aircraft?: {
+        registration?: unknown;
+        airframe?: { type?: unknown };
+      };
     };
 
-    return { id: flight.id, callsign: flight.callsign };
+    // `airports` is documented as an array of strings, which the shape of every
+    // other airport in this API says it is not. Read it for what it turns out
+    // to be and settle for less rather than throwing: a missing airport name
+    // costs one line of the dashboard, an exception costs the callsign and so
+    // the whole feed.
+    const airports = Array.isArray(flight.airports) ? flight.airports : [];
+
+    return {
+      id: flight.id,
+      callsign: flight.callsign,
+      departure: toAirport(airports[0]),
+      arrival: toAirport(airports[1]),
+      airframe: text(flight.aircraft?.airframe?.type),
+      registration: text(flight.aircraft?.registration),
+    };
   }
 
   async getDiscordPresence(): Promise<DiscordPresencePayload | null> {
@@ -211,4 +263,26 @@ export class FlightTrackerClient {
     this.accessTokenExpiresAt = this.now() + ACCESS_TOKEN_LIFETIME_MS;
     await this.tokenStore.write({ refreshToken: tokens.refreshToken });
   }
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+// Both spellings the API uses for an airport: flight legs carry
+// `iataCode`/`icaoCode`, the airport endpoints carry `iata`/`icao`. A bare
+// string is an id, which is no use here without another request, so it reads as
+// nothing rather than as a code.
+function toAirport(value: unknown): Airport | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const airport = value as Record<string, unknown>;
+
+  return {
+    iata: text(airport.iataCode) ?? text(airport.iata),
+    icao: text(airport.icaoCode) ?? text(airport.icao),
+    name: text(airport.name),
+  };
 }

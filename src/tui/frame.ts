@@ -1,8 +1,11 @@
 import type {
   ConnectionName,
   ConnectionState,
+  CurrentService,
+  ServiceAirport,
   StatusSnapshot,
 } from '../core/status';
+import { isUpdateAvailable } from '../api/release.client';
 import {
   amber,
   bold,
@@ -72,12 +75,9 @@ export function renderFrame(input: FrameInput): string[] {
     wordmark(width, input.version),
     indent(dim('═'.repeat(width - 4)), width),
     '',
-    ...modules(status, width),
-    // Flush against the modules above, the way the two of them stack on a
-    // narrow terminal. The standalone `api` line that used to sit above the
-    // boxes is gone: section 3 states the same thing and states it with a
-    // version beside it.
-    ...services(status, input.version)(width),
+    ...pair(crew(status), currentService(status), width),
+    ...pair(transponder(status), comms(status), width),
+    ...serviceStatus(status, input.version)(width),
     '',
   ];
 
@@ -87,9 +87,7 @@ export function renderFrame(input: FrameInput): string[] {
 
   lines.push(
     indent(
-      input.prompt === null
-        ? hint(input.showLogs, status.connections.adsb === 'standby')
-        : promptLine(input.prompt),
+      input.prompt === null ? hint(input) : promptLine(input.prompt),
       width,
     ),
   );
@@ -113,7 +111,7 @@ export function renderTitle(status: StatusSnapshot): string {
 
   // Ahead of the callsign, because a pilot who left the switch off and went
   // flying wants to learn that from the tab rather than from an empty track.
-  if (status.connections.adsb === 'standby') {
+  if (!status.transmitting) {
     return `standby · ${TITLE_SUFFIX}`;
   }
 
@@ -138,88 +136,161 @@ function wordmark(width: number, version: string): string {
     : indent(`${name}${' '.repeat(gap)}${tag}`, width);
 }
 
-function modules(status: StatusSnapshot, width: number): string[] {
-  const transponder = box('1 TRANSPONDER', transponderRows(status));
-  const discord = box('2 DISCORD', discordRows(status));
-
+// Two half-width boxes, or stacked when half a terminal is too narrow to read.
+function pair(
+  left: (width: number) => string[],
+  right: (width: number) => string[],
+  width: number,
+): string[] {
   if (width < SIDE_BY_SIDE_COLUMNS) {
-    return [...transponder(width), ...discord(width)];
+    return [...left(width), ...right(width)];
   }
 
-  const left = Math.floor(width / 2);
+  const half = Math.floor(width / 2);
 
-  return join(transponder(left), discord(width - left));
+  return join(left(half), right(width - half));
 }
 
-function transponderRows(status: StatusSnapshot): string[] {
-  const { connections, callsign, aircraftIdentifier } = status;
+function crew(status: StatusSnapshot): (width: number) => string[] {
+  const { crew: member } = status;
 
-  return [
-    `simulator ${marker(connections.simulator)} ${connections.simulator}`,
-    `adsb      ${marker(connections.adsb)} ${connections.adsb}`,
-    `${callsign === null ? '—' : bold(callsign)} · ${aircraftIdentifier ?? '—'}`,
-    `sent ${status.publishedCount}  dropped ${status.droppedCount}`,
-  ];
-}
-
-// The two services and this app, each with what it is doing and what it is
-// running. Full width and below the modules, because the versions push a row
-// past what half a terminal holds.
-function services(
-  status: StatusSnapshot,
-  version: string,
-): (width: number) => string[] {
-  return box('3 SERVICES', [
-    serviceRow(
-      'flight-tracker',
-      marker(status.connections.api),
-      status.connections.api,
-      status.serviceVersions.api,
-    ),
-    serviceRow(
-      'adsb',
-      marker(status.connections.adsb),
-      status.connections.adsb,
-      status.serviceVersions.adsb,
-    ),
-    // Not a connection, so not a ConnectionState: if this row is on the screen
-    // then this app is running, and the only thing worth saying is which build.
-    serviceRow('transponder', green('●'), 'running', version),
+  return box('1 CREW', [
+    member === null ? dim('not signed in') : bold(member.name),
+    member === null ? dim('press s to sign in') : member.email,
   ]);
 }
 
-// Padded rather than right-aligned, so the row can be built without knowing how
-// wide the box will be. The state column fits the longest state there is.
-const SERVICE_LABEL_WIDTH = 15;
-const SERVICE_STATE_WIDTH = 19;
+function currentService(status: StatusSnapshot): (width: number) => string[] {
+  const { service } = status;
 
-function serviceRow(
-  label: string,
-  glyph: string,
-  state: string,
-  version: string | null,
-): string {
+  if (service === null) {
+    return box('2 CRNT SERVICE', [dim('no current flight'), '']);
+  }
+
+  return box('2 CRNT SERVICE', (inner) => {
+    // The airport names are the first thing to go. Half of an eighty-column
+    // terminal does not hold `DLH5540 * [BER] Berlin -> [WAW] Warsaw Chopin`,
+    // and a name cut off mid-word tells a pilot less than no name at all — the
+    // codes are what identifies the airport.
+    const full = `${bold(service.callsign)} ${dim('*')} ${route(service, true)}`;
+    const head =
+      visibleWidth(full) <= inner
+        ? full
+        : `${bold(service.callsign)} ${dim('*')} ${route(service, false)}`;
+
+    return [
+      head,
+      `airframe: ${field(service.airframe)} ${dim('*')} tail: ${field(service.registration)}`,
+    ];
+  });
+}
+
+function route(service: CurrentService, withNames: boolean): string {
   return (
-    `${label.padEnd(SERVICE_LABEL_WIDTH)}${glyph} ` +
-    `${state.padEnd(SERVICE_STATE_WIDTH)}` +
-    `${dim(version === null ? '—' : `v${version}`)}`
+    `${airport(service.departure, withNames)} ${dim('->')} ` +
+    `${airport(service.arrival, withNames)}`
   );
 }
 
-function discordRows(status: StatusSnapshot): string[] {
-  const { connections, presenceState, presenceDetails } = status;
+function airport(place: ServiceAirport | null, withName: boolean): string {
+  if (place === null) {
+    return dim('[—]');
+  }
 
-  return [
-    `client   ${marker(connections.discord)} ${connections.discord}`,
-    `presence ${presenceDetails === null ? '—' : presenceDetails}`,
-    presenceState ?? '',
-    '',
-  ];
+  const code = field(place.iata ?? place.icao);
+
+  return withName && place.name !== null ? `${code} ${place.name}` : code;
 }
 
-function box(title: string, rows: string[]): (width: number) => string[] {
+function transponder(status: StatusSnapshot): (width: number) => string[] {
+  return box('3 XPNDR', [
+    `tail:   ${field(status.aircraftIdentifier)}`,
+    `squawk: ${field(status.squawk)}`,
+    // A transponder reports its mode, not its network: MODE C is what it is
+    // doing when it is switched on, STBY when the pilot has switched it off.
+    `mode:   ${mode(status)}`,
+    `spd:    ${status.groundSpeedKt === null ? dim('—') : `${Math.round(status.groundSpeedKt)}kt`}`,
+    `call:   ${lastCall(status.lastAcceptedReportAt)}`,
+  ]);
+}
+
+function mode(status: StatusSnapshot): string {
+  return status.transmitting ? `[${green('MODE C')}]` : `[${dim('STBY')}]`;
+}
+
+// The zulu clock the rest of aviation uses, and seconds because the whole point
+// of the row is telling a feed that stopped from one that is a second old.
+function lastCall(at: Date | null): string {
+  if (at === null) {
+    return dim('—');
+  }
+
+  const pad = (value: number): string => String(value).padStart(2, '0');
+
+  return `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}:${pad(at.getUTCSeconds())}z`;
+}
+
+function comms(status: StatusSnapshot): (width: number) => string[] {
+  const { connections, presenceState, presenceDetails } = status;
+  const publishing = presenceState !== null || presenceDetails !== null;
+
+  return box('4 COMMS', [
+    `discord:  ${marker(connections.discord)} ${connections.discord}`,
+    `presence: ${publishing ? `[${green('ON')}]` : `[${dim('OFF')}]`}`,
+    presenceDetails === null ? '' : dim(presenceDetails),
+    presenceState === null ? '' : dim(presenceState),
+    '',
+  ]);
+}
+
+// One line, because three services and their versions is a sentence rather than
+// a table, and reading it left to right is how anyone reports a fault.
+function serviceStatus(
+  status: StatusSnapshot,
+  version: string,
+): (width: number) => string[] {
+  const update = isUpdateAvailable(version, status.latestRelease);
+
+  return box('5 STATUS', [
+    [
+      `adsb: ${health(status.connections.adsb, status.serviceVersions.adsb)}`,
+      `tracker: ${health(status.connections.api, status.serviceVersions.api)}`,
+      update
+        ? `xpndr: [${amber(`UPDATE to v${status.latestRelease} possible`)}]`
+        : `xpndr: [${green('OK')}, v${version}]`,
+    ].join(dim(' · ')),
+  ]);
+}
+
+// `standby` and `waiting-for-flight` are this app's states, not the service's:
+// from here the service answered, so it is up.
+function health(state: ConnectionState, version: string | null): string {
+  const suffix = version === null ? '' : `, v${version}`;
+
+  if (state === 'unauthorised') {
+    return `[${amber('UNAUTHORISED')}${suffix}]`;
+  }
+
+  if (state === 'disconnected') {
+    return `[${red('OFFLINE')}${suffix}]`;
+  }
+
+  return `[${green('OK')}${suffix}]`;
+}
+
+function field(value: string | null): string {
+  return value === null ? dim('[—]') : `[${bold(value)}]`;
+}
+
+// Rows may be a plain list or a function of the room available, which is what
+// lets a box that has more to say than fits choose what to drop.
+function box(
+  title: string,
+  rows: string[] | ((inner: number) => string[]),
+): (width: number) => string[] {
   return (width) => {
     const inner = width - 2;
+    const content = typeof rows === 'function' ? rows(inner - 1) : rows;
 
     // Composed segment by segment rather than wrapping the whole border in
     // one style: a nested reset closes the outer style early and leaks the
@@ -228,7 +299,7 @@ function box(title: string, rows: string[]): (width: number) => string[] {
 
     return [
       `${dim('┌')}${headingRule(head, inner)}${dim('┐')}`,
-      ...rows.map(
+      ...content.map(
         (row) => `${dim('│')}${toVisibleWidth(` ${row}`, inner)}${dim('│')}`,
       ),
       dim(`└${'─'.repeat(Math.max(inner, 0))}┘`),
@@ -259,15 +330,29 @@ function logPane(logs: string[], width: number): string[] {
   ];
 }
 
-// Every recovery the pilot has is a single letter, so every letter is on the
-// screen: an app that reports `api ! unauthorised` and keeps the way back in
-// to itself is the same as having no way back in. Quitting is not among them —
-// ctrl-c still works, it is just not something the frame needs to teach.
-function hint(showLogs: boolean, standby: boolean): string {
-  return dim(
-    `s sign in · c callsign · t ${standby ? 'transmit' : 'standby'} · ` +
-      `l ${showLogs ? 'hide' : 'show'} logs`,
-  );
+// The key was the same colour as the words around it, which made the whole line
+// read as prose rather than as a list of things to press. Brackets and a bright
+// key; the label stays dim so the eye lands on the letter.
+function key(letter: string, label: string, enabled = true): string {
+  return enabled
+    ? `[${bold(letter)}] ${dim(label)}`
+    : dim(`[${letter}] ${label}`);
+}
+
+function hint(input: FrameInput): string {
+  const { status } = input;
+  const signedIn = status.crew !== null;
+
+  return [
+    signedIn
+      ? // Signing out mid-transmission would strand a flight halfway through
+        // its track, so it waits for the transponder to be switched off.
+        key('s', 'sign out', !status.transmitting)
+      : key('s', 'sign in'),
+    key('t', 'toggle xpndr mode'),
+    key('c', 'custom callsign'),
+    key('d', input.showLogs ? 'hide debug' : 'debug'),
+  ].join(dim(' · '));
 }
 
 function indent(text: string, width: number): string {

@@ -89,6 +89,7 @@ function handlers(
     onQuit: () => undefined,
     onCallsign: () => undefined,
     onSignIn: () => undefined,
+    onSignOut: () => undefined,
     onTransmit: () => undefined,
     ...overrides,
   };
@@ -235,15 +236,15 @@ describe('Dashboard', () => {
     expect(typed).toEqual(['LOT1']);
   });
 
-  it('shows and hides the log pane on the toggle key', () => {
+  it('shows and hides the debug pane on the toggle key', () => {
     const { out, input, view } = dashboard();
     view.start(handlers());
     view.append('20:14:22 WARN  something happened');
 
-    input.press('l');
+    input.press('d');
     const shown = out.all;
     out.written = [];
-    input.press('l');
+    input.press('d');
     const hidden = out.all;
     view.stop();
 
@@ -251,13 +252,13 @@ describe('Dashboard', () => {
     expect(hidden).not.toContain('something happened');
   });
 
-  it('accepts the toggle key in upper case too', () => {
+  it('accepts the debug key in upper case too', () => {
     const { out, input, view } = dashboard();
     view.start(handlers());
     view.append('a log line');
     out.written = [];
 
-    input.press('L');
+    input.press('D');
     view.stop();
 
     expect(out.all).toContain('a log line');
@@ -281,7 +282,7 @@ describe('Dashboard', () => {
     view.append('earlier line');
     out.written = [];
 
-    input.press('l');
+    input.press('d');
     view.stop();
 
     expect(out.all).toContain('earlier line');

@@ -87,6 +87,41 @@ quit.
 - **THEN** the tray shows the callsign being published and the time of the last accepted
   report
 
+### Requirement: The status view is read as five sections
+
+The system SHALL group what it shows into the crew signed in, the current service, the
+transponder, the Discord connection, and the state of the services it depends on. The
+transponder section SHALL report the aircraft's own state — the identifier the simulator gives,
+the squawk, the ground speed, and the mode the pilot has selected — separately from the flight
+the API assigned, so that a disagreement between the two is visible rather than mysterious. It
+SHALL report when the last report was accepted, precisely enough to tell a feed that stopped
+from one that is a second old.
+
+Every key the system offers SHALL be visually distinguishable from the words describing it. The
+system SHALL NOT advertise quitting as one of them.
+
+#### Scenario: The simulator is flying a different aircraft than the flight assigns
+
+- **WHEN** the simulator's identifier and the flight's tail differ
+- **THEN** both are on the screen, in their own sections
+
+#### Scenario: Nothing has been published for a while
+
+- **WHEN** the feed stopped some minutes ago
+- **THEN** the time of the last accepted report is shown, and is what reveals it
+
+### Requirement: Ending a session cannot strand a flight
+
+The system SHALL let the pilot end the session from the status view, and SHALL refuse to do so
+while the transponder is transmitting, showing that the action is unavailable rather than
+failing when it is used.
+
+#### Scenario: Signing out mid-flight
+
+- **WHEN** the pilot asks to sign out while position reports are being published
+- **THEN** nothing happens, and the action is shown as unavailable until transmission is
+  switched off
+
 ### Requirement: The status view names the version at both ends and its own
 
 The system SHALL show, alongside the state of each remote service, the version that service
@@ -110,6 +145,16 @@ else. Versions SHALL be re-read rarely, since neither changes except on a deploy
 
 - **WHEN** a version cannot be read
 - **THEN** the row shows the state without a version, and both feeds carry on unaffected
+
+#### Scenario: A newer build has been released
+
+- **WHEN** the newest published release is newer than the running build
+- **THEN** the view says an update is possible and names the version
+
+#### Scenario: Running a build from source
+
+- **WHEN** the running build has no release version
+- **THEN** no update is offered, whatever has been published
 
 ### Requirement: The app starts with Windows and survives the sim it accompanies
 

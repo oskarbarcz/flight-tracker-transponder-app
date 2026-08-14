@@ -21,6 +21,39 @@ function frame(
   });
 }
 
+// Reading assertions against a coloured frame means reading them against the
+// escapes too, so the plain text is what most of these look at.
+function plain(
+  columns: number,
+  mutate?: (status: StatusRegistry) => void,
+  logs?: string[],
+  showLogs?: boolean,
+): string {
+  process.env.NO_COLOR = '1';
+
+  try {
+    return frame(columns, mutate, logs, showLogs).join('\n');
+  } finally {
+    delete process.env.NO_COLOR;
+  }
+}
+
+function signedIn(status: StatusRegistry): void {
+  status.set('api', 'connected');
+  status.setCrew({ name: 'Oskar Barcz', email: 'pilot@example.com' });
+}
+
+function onService(status: StatusRegistry): void {
+  signedIn(status);
+  status.setService({
+    callsign: 'DLH5540',
+    departure: { iata: 'BER', icao: 'EDDB', name: 'Berlin' },
+    arrival: { iata: 'WAW', icao: 'EPWA', name: 'Warsaw Chopin' },
+    airframe: 'B77W',
+    registration: 'SP-LVD',
+  });
+}
+
 describe('renderFrame', () => {
   it('pads every line to the terminal width', () => {
     for (const line of frame(80)) {
@@ -58,168 +91,209 @@ describe('renderFrame', () => {
     expect(lines[1]).toContain('v0.3.0');
   });
 
-  it('puts both modules on the same rows when there is room', () => {
-    const lines = frame(80).join('\n');
-    const row = lines
-      .split('\n')
-      .find((line) => line.includes('1 TRANSPONDER'));
+  it('draws all five sections, numbered', () => {
+    const lines = plain(80);
 
-    expect(row).toContain('2 DISCORD');
+    for (const title of [
+      '1 CREW',
+      '2 CRNT SERVICE',
+      '3 XPNDR',
+      '4 COMMS',
+      '5 STATUS',
+    ]) {
+      expect(lines).toContain(title);
+    }
   });
 
-  it('stacks the modules when the terminal is narrow', () => {
-    const lines = frame(SIDE_BY_SIDE_COLUMNS - 1);
-    const row = lines.find((line) => line.includes('1 TRANSPONDER'));
+  it('pairs the first four sections two to a row when there is room', () => {
+    const rows = plain(80).split('\n');
 
-    expect(row).not.toContain('2 DISCORD');
-    expect(lines.some((line) => line.includes('2 DISCORD'))).toBe(true);
+    expect(rows.find((row) => row.includes('1 CREW'))).toContain(
+      '2 CRNT SERVICE',
+    );
+    expect(rows.find((row) => row.includes('3 XPNDR'))).toContain('4 COMMS');
   });
 
-  it('reports what the transponder is doing', () => {
-    const lines = frame(80, (status) => {
-      status.set('simulator', 'connected');
+  it('gives the status section the full width to itself', () => {
+    const rows = plain(80).split('\n');
+    const row = rows.find((line) => line.includes('5 STATUS'));
+
+    expect(row).not.toContain('4 COMMS');
+    expect(visibleWidth(row ?? '')).toBe(80);
+  });
+
+  it('stacks the pairs when the terminal is narrow', () => {
+    const rows = plain(SIDE_BY_SIDE_COLUMNS - 1).split('\n');
+
+    expect(rows.find((row) => row.includes('1 CREW'))).not.toContain(
+      '2 CRNT SERVICE',
+    );
+    expect(rows.some((row) => row.includes('2 CRNT SERVICE'))).toBe(true);
+  });
+
+  it('names the signed-in pilot and their address', () => {
+    const lines = plain(80, signedIn);
+
+    expect(lines).toContain('Oskar Barcz');
+    expect(lines).toContain('pilot@example.com');
+  });
+
+  it('says who is not signed in, and how to be', () => {
+    const lines = plain(80);
+
+    expect(lines).toContain('not signed in');
+    expect(lines).toContain('press s to sign in');
+  });
+
+  it('reads the current service as callsign, route, airframe and tail', () => {
+    const lines = plain(120, onService);
+
+    expect(lines).toContain('DLH5540 * [BER] Berlin -> [WAW] Warsaw Chopin');
+    expect(lines).toContain('airframe: [B77W] * tail: [SP-LVD]');
+  });
+
+  // Half of an eighty-column terminal cannot hold the names, and a name cut off
+  // mid-word identifies an airport less well than its code alone.
+  it('drops the airport names before it lets the route be truncated', () => {
+    const lines = plain(80, onService);
+
+    expect(lines).toContain('DLH5540 * [BER] -> [WAW]');
+    expect(lines).not.toContain('Warsa');
+  });
+
+  it('says there is no current flight when there is none', () => {
+    expect(plain(80, signedIn)).toContain('no current flight');
+  });
+
+  it('reports the transponder as an aircraft would', () => {
+    const lines = plain(80, (status) => {
+      status.setAircraftIdentifier('SP-LVD');
+      status.setTransponder('2000', 451.4);
+      status.recordAcceptedReport(new Date(Date.UTC(2026, 7, 14, 11, 30, 30)));
+    });
+
+    expect(lines).toContain('tail:   [SP-LVD]');
+    expect(lines).toContain('squawk: [2000]');
+    expect(lines).toContain('spd:    451kt');
+    expect(lines).toContain('call:   11:30:30z');
+  });
+
+  it.each([
+    [true, 'mode:   [MODE C]'],
+    [false, 'mode:   [STBY]'],
+  ])('reads mode from the switch, not the network (%s)', (on, expected) => {
+    expect(plain(80, (status) => status.setTransmitting(on))).toContain(
+      expected,
+    );
+  });
+
+  it('leaves the transponder rows blank until the simulator says otherwise', () => {
+    const lines = plain(80);
+
+    expect(lines).toContain('squawk: [—]');
+    expect(lines).toContain('call:   —');
+  });
+
+  it('reports the Discord client and whether presence is published', () => {
+    expect(
+      plain(80, (status) => {
+        status.set('discord', 'connected');
+        status.setPresence('Boarding', 'EPWA -> EDDF');
+      }),
+    ).toContain('presence: [ON]');
+
+    expect(plain(80)).toContain('presence: [OFF]');
+  });
+
+  it('states both services and itself on one line, with versions', () => {
+    const lines = plain(80, (status) => {
+      status.set('api', 'connected');
       status.set('adsb', 'connected');
-      status.setCallsign('SP123');
-      status.setAircraftIdentifier('A320');
-      status.recordAcceptedReport(new Date('2026-08-13T20:00:00.000Z'));
-    }).join('\n');
+      status.setServiceVersion('api', '3.24.0');
+      status.setServiceVersion('adsb', '0.5.0');
+    });
 
-    expect(lines).toContain('SP123');
-    expect(lines).toContain('A320');
-    expect(lines).toContain('sent 1');
+    expect(lines).toContain(
+      'adsb: [OK, v0.5.0] · tracker: [OK, v3.24.0] · xpndr: [OK, v0.3.0]',
+    );
   });
 
-  it('reports the published presence', () => {
-    const lines = frame(80, (status) => {
-      status.set('discord', 'connected');
-      status.setPresence('Checked in, takeoff at 13:15 UTC', 'BOS -> PHL');
-    }).join('\n');
+  // `standby` and `waiting-for-flight` are this app's states, not the service's:
+  // the service answered, so from here it is up.
+  it.each([
+    ['waiting-for-flight', 'adsb: [OK]'],
+    ['standby', 'adsb: [OK]'],
+    ['disconnected', 'adsb: [OFFLINE]'],
+    ['unauthorised', 'adsb: [UNAUTHORISED]'],
+  ])('reads %s as %s', (state, expected) => {
+    expect(
+      plain(80, (status) => status.set('adsb', state as 'connected')),
+    ).toContain(expected);
+  });
 
-    expect(lines).toContain('BOS -> PHL');
-    expect(lines).toContain('Checked in');
+  it('offers the update when a newer release exists', () => {
+    expect(plain(80, (status) => status.setLatestRelease('0.8.0'))).toContain(
+      'xpndr: [UPDATE to v0.8.0 possible]',
+    );
+  });
+
+  it('says nothing about updates when it is already the newest', () => {
+    const lines = plain(80, (status) => status.setLatestRelease('0.3.0'));
+
+    expect(lines).toContain('xpndr: [OK, v0.3.0]');
+    expect(lines).not.toContain('UPDATE');
   });
 
   it('hides the log pane until it is asked for', () => {
     const logs = ['20:14:22 WARN  simulator connection failed'];
 
-    expect(frame(80, undefined, logs, false).join('\n')).not.toContain(
+    expect(plain(80, undefined, logs, false)).not.toContain(
       'simulator connection failed',
     );
-    expect(frame(80, undefined, logs, true).join('\n')).toContain(
+    expect(plain(80, undefined, logs, true)).toContain(
       'simulator connection failed',
     );
   });
 
   it('shows only the most recent log lines', () => {
     const logs = Array.from({ length: 40 }, (_, index) => `line-${index}`);
-    const lines = frame(80, undefined, logs, true).join('\n');
+    const lines = plain(80, undefined, logs, true);
 
     expect(lines).toContain('line-39');
     expect(lines).not.toContain('line-0 ');
   });
 
-  it('tells the pilot how to reach the logs and what the keys do', () => {
-    expect(frame(80).join('\n')).toContain(
-      's sign in · c callsign · t standby · l show logs',
-    );
-    expect(frame(80, undefined, [], true).join('\n')).toContain('l hide logs');
+  // The key used to be the same colour as its label, which made the bottom line
+  // read as a sentence rather than as a list of things to press.
+  it('brackets every key so it can be told from its label', () => {
+    const lines = plain(80);
+
+    expect(lines).toContain('[s] sign in');
+    expect(lines).toContain('[t] toggle xpndr mode');
+    expect(lines).toContain('[c] custom callsign');
+    expect(lines).toContain('[d] debug');
+  });
+
+  it('marks the key brighter than the words around it', () => {
+    const line = frame(80).at(-1) ?? '';
+
+    // The letter carries its own style; the label is dim.
+    expect(line).toContain('[[1ms[0m]');
+  });
+
+  it('offers signing out once there is a session to end', () => {
+    const lines = plain(80, (status) => {
+      signedIn(status);
+      status.setTransmitting(false);
+    });
+
+    expect(lines).toContain('[s] sign out');
+    expect(lines).not.toContain('[s] sign in');
   });
 
   it('does not offer quitting as a key to learn', () => {
-    expect(frame(80).join('\n')).not.toContain('ctrl-c');
-    expect(frame(80).join('\n')).not.toContain('quit');
-  });
-
-  // Losing the session used to leave `api ! unauthorised` on screen with
-  // nothing on the frame saying how to get out of it.
-  it('names the sign-in key, which is the only way out of unauthorised', () => {
-    expect(
-      frame(80, (status) => status.set('api', 'unauthorised')).join('\n'),
-    ).toContain('s sign in');
-  });
-
-  it('offers the opposite of whatever the transponder is doing', () => {
-    expect(
-      frame(80, (status) => status.set('adsb', 'standby')).join('\n'),
-    ).toContain('t transmit');
-    expect(
-      frame(80, (status) => status.set('adsb', 'connected')).join('\n'),
-    ).toContain('t standby');
-  });
-
-  it('shows standby as its own state rather than as a fault', () => {
-    process.env.NO_COLOR = '1';
-
-    try {
-      const lines = frame(80, (status) => status.set('adsb', 'standby')).join(
-        '\n',
-      );
-
-      expect(lines).toContain('adsb      ◌ standby');
-      expect(lines).not.toContain('adsb      ○');
-    } finally {
-      delete process.env.NO_COLOR;
-    }
-  });
-
-  it('reports both services and this app, each with its version', () => {
-    process.env.NO_COLOR = '1';
-
-    try {
-      const lines = frame(80, (status) => {
-        status.set('api', 'connected');
-        status.set('adsb', 'connected');
-        status.setServiceVersion('api', '3.24.0');
-        status.setServiceVersion('adsb', '0.5.0');
-      }).join('\n');
-
-      expect(lines).toContain('3 SERVICES');
-      expect(lines).toContain('flight-tracker ● connected          v3.24.0');
-      expect(lines).toContain('adsb           ● connected          v0.5.0');
-      expect(lines).toContain('transponder    ● running            v0.3.0');
-    } finally {
-      delete process.env.NO_COLOR;
-    }
-  });
-
-  // A version is read over the network and the row has to exist before it
-  // arrives, so the unknown case is the one that renders on every first frame.
-  it('stands a dash in for a version it could not read', () => {
-    process.env.NO_COLOR = '1';
-
-    try {
-      const lines = frame(80).join('\n');
-
-      expect(lines).toContain('flight-tracker ○ disconnected       —');
-      expect(lines).toContain('adsb           ○ disconnected       —');
-    } finally {
-      delete process.env.NO_COLOR;
-    }
-  });
-
-  it('states this app as running, whatever the services are doing', () => {
-    process.env.NO_COLOR = '1';
-
-    try {
-      const lines = frame(80, (status) => {
-        status.set('api', 'unauthorised');
-        status.set('adsb', 'unauthorised');
-      }).join('\n');
-
-      expect(lines).toContain('transponder    ● running');
-    } finally {
-      delete process.env.NO_COLOR;
-    }
-  });
-
-  // The line it replaces: `api ● connected` used to sit on its own above the
-  // boxes, saying exactly what section 3 now says with a version beside it.
-  it('does not also state the api on a line of its own', () => {
-    const lines = frame(80, (status) => status.set('api', 'connected')).join(
-      '\n',
-    );
-
-    expect(lines).not.toMatch(/^ {2}api /m);
+    expect(plain(80)).not.toContain('ctrl-c');
+    expect(plain(80)).not.toContain('quit');
   });
 
   it('survives an absurdly narrow terminal', () => {
@@ -280,7 +354,7 @@ describe('renderTitle', () => {
       title((status) => {
         healthy(status);
         status.setCallsign('SP-LOT');
-        status.set('adsb', 'standby');
+        status.setTransmitting(false);
       }),
     ).toBe('standby · Flight Tracker');
   });

@@ -13,11 +13,39 @@ export type ConnectionState =
 // local sockets. Only these publish a version of their own.
 export type ServiceName = 'api' | 'adsb';
 
+export type Crew = {
+  name: string;
+  email: string;
+};
+
+export type ServiceAirport = {
+  iata: string | null;
+  icao: string | null;
+  name: string | null;
+};
+
+// The flight as Flight Tracker describes it, which is a different thing from
+// what the simulator has loaded. Both are shown, because the disagreement
+// between them is a fault worth seeing.
+export type CurrentService = {
+  callsign: string;
+  departure: ServiceAirport | null;
+  arrival: ServiceAirport | null;
+  airframe: string | null;
+  registration: string | null;
+};
+
 export type StatusSnapshot = {
   connections: Record<ConnectionName, ConnectionState>;
   serviceVersions: Record<ServiceName, string | null>;
+  latestRelease: string | null;
+  crew: Crew | null;
+  service: CurrentService | null;
   callsign: string | null;
   aircraftIdentifier: string | null;
+  squawk: string | null;
+  groundSpeedKt: number | null;
+  transmitting: boolean;
   lastAcceptedReportAt: Date | null;
   publishedCount: number;
   droppedCount: number;
@@ -46,8 +74,14 @@ export class StatusRegistry {
     SERVICES.map((name) => [name, null]),
   );
 
+  private latestRelease: string | null = null;
+  private crew: Crew | null = null;
+  private service: CurrentService | null = null;
   private callsign: string | null = null;
   private aircraftIdentifier: string | null = null;
+  private squawk: string | null = null;
+  private groundSpeedKt: number | null = null;
+  private transmitting = true;
   private lastAcceptedReportAt: Date | null = null;
   private publishedCount = 0;
   private droppedCount = 0;
@@ -62,12 +96,36 @@ export class StatusRegistry {
     this.serviceVersions.set(name, version);
   }
 
+  setLatestRelease(version: string | null): void {
+    this.latestRelease = version;
+  }
+
+  setCrew(crew: Crew | null): void {
+    this.crew = crew;
+  }
+
+  setService(service: CurrentService | null): void {
+    this.service = service;
+  }
+
   setCallsign(callsign: string | null): void {
     this.callsign = callsign;
   }
 
   setAircraftIdentifier(identifier: string | null): void {
     this.aircraftIdentifier = identifier;
+  }
+
+  // What the transponder is actually squawking, taken from the last sample
+  // rather than from the last report: it is the aircraft's state, and it is
+  // worth seeing even while nothing is being published.
+  setTransponder(squawk: string | null, groundSpeedKt: number | null): void {
+    this.squawk = squawk;
+    this.groundSpeedKt = groundSpeedKt;
+  }
+
+  setTransmitting(transmitting: boolean): void {
+    this.transmitting = transmitting;
   }
 
   recordAcceptedReport(at: Date): void {
@@ -94,8 +152,14 @@ export class StatusRegistry {
         ServiceName,
         string | null
       >,
+      latestRelease: this.latestRelease,
+      crew: this.crew,
+      service: this.service,
       callsign: this.callsign,
       aircraftIdentifier: this.aircraftIdentifier,
+      squawk: this.squawk,
+      groundSpeedKt: this.groundSpeedKt,
+      transmitting: this.transmitting,
       lastAcceptedReportAt: this.lastAcceptedReportAt,
       publishedCount: this.publishedCount,
       droppedCount: this.droppedCount,
