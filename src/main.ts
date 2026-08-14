@@ -5,7 +5,7 @@ import { Dashboard } from './tui/dashboard';
 import { previewFrame } from './tui/preview';
 import { useUtf8Console } from './platform/console-encoding';
 import { Screen } from './tui/screen';
-import { StatusRegistry } from './core/status';
+import { type ServiceName, StatusRegistry } from './core/status';
 import { describeError, Supervisor } from './core/supervisor';
 import { FileTokenStore, SecretTokenStore } from './api/token-store';
 import { ConsolePrompt } from './platform/prompt';
@@ -146,6 +146,31 @@ async function bootstrap(): Promise<void> {
         ? 'callsign override released: following the current flight again'
         : `callsign overridden to ${callsign}: publishing without a Flight Tracker flight`,
     );
+  };
+
+  const reportedVersions = new Map<ServiceName, string>();
+
+  // A version nobody could read leaves the row showing a dash rather than
+  // stopping anything, and it is only worth a log line the first time it
+  // changes: on a long flight this runs dozens of times and says the same
+  // thing.
+  const readVersion = async (
+    name: ServiceName,
+    read: () => Promise<string>,
+  ): Promise<void> => {
+    try {
+      const version = await read();
+      status.setServiceVersion(name, version);
+
+      if (reportedVersions.get(name) !== version) {
+        reportedVersions.set(name, version);
+        logger.info(`${name} is running v${version}`);
+      }
+    } catch (error) {
+      logger.debug(
+        `could not read the ${name} version: ${describeError(error)}`,
+      );
+    }
   };
 
   const pollCurrentFlight = async (): Promise<void> => {
@@ -294,6 +319,23 @@ async function bootstrap(): Promise<void> {
 
         await presenceFeed.tick();
         await sleep(config.presencePollIntervalMs);
+      }
+    },
+  });
+
+  // Section 3 of the dashboard. Both services state a version without being
+  // asked for a token, so this keeps working when the session or the client
+  // token is the thing that is broken — which is exactly when knowing what is
+  // deployed on the other end is worth something.
+  supervisor.start({
+    name: 'versions',
+    run: async (signal) => {
+      while (!signal.aborted) {
+        await Promise.all([
+          readVersion('api', () => api.version()),
+          readVersion('adsb', () => adsb.version()),
+        ]);
+        await sleep(config.versionPollIntervalMs);
       }
     },
   });

@@ -124,14 +124,21 @@ that. Consequences, all deliberate:
   can see when it disagrees with the flight — the likeliest cause of "my track is missing"
   under the C# app.
 
-### One report per second airborne, one per five on the ground
+### One report every ten seconds, whatever the phase of flight
 
 `POST /api/v1/position` takes a single report, so publish rate equals request rate. The API
 polls at one and five minute intervals and deduplicates by timestamp, so sub-second fidelity
 buys nothing; a stationary aircraft at the gate buys less. Sample SimConnect at 1 Hz
-(`SimConnectPeriod.SECOND`), publish every tick while `CONTACT POINT IS ON GROUND` is false, every fifth
-while it is true, and always publish a transition immediately so the takeoff and landing
-edges are exact.
+(`SimConnectPeriod.SECOND`) but publish one report in ten, and always publish a transition
+across `CONTACT POINT IS ON GROUND` immediately so the takeoff and landing edges stay exact.
+Sampling stays at 1 Hz precisely so those two edges are still caught within a second: it is
+the cadence that is thinned, not the precision of the moments that carry information.
+
+This started at one report a second airborne and one in five on the ground. Both were far
+finer than anything downstream reads, and a ten-second cadence is a tenth of the traffic for a
+track nobody can tell apart. The two-rate split went with it: with the transition rule doing
+the work that mattered, a separate ground rate was only buying a saving on a parked aircraft
+that a flat ten seconds already makes small.
 
 Reports that fail to publish go to a bounded FIFO queue (cap 3600 — one hour airborne),
 retried with backoff, oldest dropped first. The API sorts and deduplicates by timestamp, so
@@ -228,8 +235,8 @@ version is in pilots' hands.
 
 ### Cutover is per pilot, and never parallel for one callsign
 
-Both applications publishing the same callsign would interleave two independent 1 Hz streams
-with different clock offsets. Deduplication is by exact timestamp, so nothing collides — but
+Both applications publishing the same callsign would interleave two independent streams
+with different cadences and clock offsets. Deduplication is by exact timestamp, so nothing collides — but
 the track gains an apparent jitter that the API's own takeoff and off-block detection reads as
 movement. A pilot runs one or the other. Validation flies a real flight with the new app while
 the C# app is closed, and compares the resulting track against the previous flight's.

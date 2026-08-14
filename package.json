@@ -1,6 +1,6 @@
 {
   "name": "flight-tracker-transponder-app",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "homepage": "https://flights.barcz.me",
   "author": "oskarbarcz",
@@ -13,6 +13,7 @@
     "build:icon": "node bin/make-icon.mjs",
     "start": "ts-node src/main.ts",
     "start:dev": "ts-node-dev --respawn src/main.ts",
+    "preview": "node bin/preview.mjs",
     "lint": "biome check src",
     "lint:fix": "biome check --write src",
     "lint:ci": "biome ci src",

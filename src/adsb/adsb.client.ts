@@ -65,6 +65,23 @@ export class AdsbClient {
     }
   }
 
+  // `GET /` is the service's documented status endpoint — `{ status, version }`
+  // — and it needs no token, so this answers even when the client token is the
+  // thing that is wrong.
+  async version(): Promise<string> {
+    const response = await this.fetchImpl(`${this.baseUrl}/`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `the ADS-B service answered ${response.status} to its status endpoint`,
+      );
+    }
+
+    return versionOf((await response.json()) as { version?: unknown });
+  }
+
   async publish(report: PositionReport): Promise<void> {
     const response = await this.request('/api/v1/position', 'POST', report);
 
@@ -121,4 +138,12 @@ async function detailOf(response: Response): Promise<string> {
 
 function suffix(detail: string): string {
   return detail === '' ? '.' : `: ${detail}`;
+}
+
+function versionOf(body: { version?: unknown }): string {
+  if (typeof body.version !== 'string' || body.version === '') {
+    throw new Error('the ADS-B service reported no version');
+  }
+
+  return body.version;
 }

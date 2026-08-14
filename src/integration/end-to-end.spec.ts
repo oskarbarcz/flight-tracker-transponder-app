@@ -134,6 +134,10 @@ describe('flight-tracker API integration', () => {
         presenceStatus === 204
           ? { status: 204 }
           : { status: 200, body: presencePayload },
+      'GET /api-json': () => ({
+        status: 200,
+        body: { openapi: '3.0.0', info: { title: 'x', version: '3.24.0' } },
+      }),
     });
 
     await api.start();
@@ -198,6 +202,20 @@ describe('flight-tracker API integration', () => {
     await expect(
       client().signIn('pilot@example.com', 'P@$$w0rd'),
     ).rejects.toThrow('The API answered 503 to the sign-in.');
+  });
+
+  // Section 3 of the dashboard has to say something useful precisely when the
+  // session is the thing that is broken, so the version must not need one.
+  it('reads its version out of the OpenAPI document, with no session', async () => {
+    const flightTracker = new FlightTrackerClient(
+      api.baseUrl,
+      new InMemoryTokenStore(),
+      fetch,
+    );
+
+    await expect(flightTracker.version()).resolves.toBe('3.24.0');
+    expect(api.requestsTo('/api/v1/auth/refresh')).toHaveLength(0);
+    expect(api.requestsTo('/api-json')[0]?.authorization).toBeUndefined();
   });
 
   it('gives up on a session the API no longer accepts', async () => {
@@ -267,6 +285,10 @@ describe('ADS-B service integration', () => {
         status: publishStatus,
         body: publishBody,
       }),
+      'GET /': () => ({
+        status: 200,
+        body: { status: 'OK', version: '0.5.0' },
+      }),
     });
 
     await adsbService.start();
@@ -286,7 +308,9 @@ describe('ADS-B service integration', () => {
     const feed = new PositionFeed(
       new AdsbClient(adsbService.baseUrl, token),
       new PositionQueue(10),
-      new RatePolicy(),
+      // Every sample publishes: this is about the ADS-B contract, not the
+      // cadence the reports arrive at.
+      new RatePolicy(1),
       status,
       silentLogger(),
       () => clock,
@@ -381,6 +405,15 @@ describe('ADS-B service integration', () => {
     await feed.drain();
 
     expect(status.snapshot().connections.adsb).toBe('unauthorised');
+  });
+
+  // Same reasoning as the API's: the version has to be readable when the client
+  // token is the thing that is wrong, so it comes off the public status route.
+  it('reads its version off the status endpoint, with no token', async () => {
+    await expect(
+      new AdsbClient(adsbService.baseUrl, 'wrong-token').version(),
+    ).resolves.toBe('0.5.0');
+    expect(adsbService.requestsTo('/')[0]?.authorization).toBeUndefined();
   });
 
   it('sends every field the contract marks required, even from a bare sample', async () => {

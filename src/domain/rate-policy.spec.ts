@@ -1,4 +1,4 @@
-import { RatePolicy } from './rate-policy';
+import { PUBLISH_INTERVAL_TICKS, RatePolicy } from './rate-policy';
 
 function run(policy: RatePolicy, onGround: boolean, ticks: number): number {
   let published = 0;
@@ -13,12 +13,13 @@ function run(policy: RatePolicy, onGround: boolean, ticks: number): number {
 }
 
 describe('RatePolicy', () => {
-  it('publishes every tick while airborne', () => {
-    expect(run(new RatePolicy(), false, 60)).toBe(60);
+  it('publishes once every ten seconds at the 1 Hz sample rate', () => {
+    expect(PUBLISH_INTERVAL_TICKS).toBe(10);
+    expect(run(new RatePolicy(), false, 60)).toBe(6);
   });
 
-  it('publishes every fifth tick on the ground', () => {
-    expect(run(new RatePolicy(), true, 60)).toBe(12);
+  it('holds the same cadence on the ground', () => {
+    expect(run(new RatePolicy(), true, 60)).toBe(6);
   });
 
   it('publishes the first sample it ever sees', () => {
@@ -39,12 +40,12 @@ describe('RatePolicy', () => {
     expect(policy.shouldPublish(true)).toBe(true);
   });
 
-  it('does not let a transition reset the ground cadence early', () => {
+  it('does not let a transition reset the cadence early', () => {
     const policy = new RatePolicy();
     policy.shouldPublish(false);
     expect(policy.shouldPublish(true)).toBe(true);
 
-    expect(run(policy, true, 4)).toBe(0);
+    expect(run(policy, true, PUBLISH_INTERVAL_TICKS - 1)).toBe(0);
     expect(policy.shouldPublish(true)).toBe(true);
   });
 

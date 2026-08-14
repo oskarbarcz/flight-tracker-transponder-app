@@ -87,6 +87,30 @@ quit.
 - **THEN** the tray shows the callsign being published and the time of the last accepted
   report
 
+### Requirement: The status view names the version at both ends and its own
+
+The system SHALL show, alongside the state of each remote service, the version that service
+reports and the version of the app itself. A version SHALL be obtained without a session and
+without the ADS-B client token, so that it is still readable when either of those is what has
+failed. A version that could not be read SHALL be shown as absent and SHALL NOT stop anything
+else. Versions SHALL be re-read rarely, since neither changes except on a deployment.
+
+#### Scenario: Reporting a fault against a deployment
+
+- **WHEN** the pilot opens the status view
+- **THEN** the version of the API, the version of the ADS-B service and the version of the app
+  are all readable off one screen
+
+#### Scenario: The session has expired
+
+- **WHEN** the API rejects the stored session
+- **THEN** the API's version is still shown, because reading it never needed the session
+
+#### Scenario: A service cannot be reached at all
+
+- **WHEN** a version cannot be read
+- **THEN** the row shows the state without a version, and both feeds carry on unaffected
+
 ### Requirement: The app starts with Windows and survives the sim it accompanies
 
 The system SHALL be installable to start with the signed-in Windows user without

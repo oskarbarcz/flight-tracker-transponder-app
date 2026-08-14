@@ -141,11 +141,17 @@ authoritative and published unchanged.
   hyphens
 - **THEN** the override is refused with a reason, and nothing is published under it
 
-### Requirement: Publication rate follows the phase of flight
+### Requirement: One report every ten seconds, and both edges exactly
 
-The system SHALL publish one report per second while the aircraft is airborne and one per
-five seconds while it is on the ground, and SHALL publish immediately on a transition between
-the two so the takeoff and touchdown edges are recorded at full precision.
+The system SHALL publish one position report every ten seconds, and SHALL publish immediately
+on a transition between airborne and on-ground so the takeoff and touchdown edges are recorded
+at full precision. The simulator SHALL continue to be sampled once a second, so that a
+transition is noticed within a second of happening rather than at the next report.
+
+#### Scenario: Steady flight
+
+- **WHEN** the aircraft has been airborne for a minute
+- **THEN** six reports have been published, ten seconds apart
 
 #### Scenario: Lift-off
 
@@ -155,7 +161,7 @@ the two so the takeoff and touchdown edges are recorded at full precision.
 #### Scenario: Parked at the gate
 
 - **WHEN** the aircraft has been stationary on the ground for a minute
-- **THEN** roughly twelve reports have been published, not sixty
+- **THEN** six reports have been published, not sixty
 
 ### Requirement: Reports survive a failed publish
 

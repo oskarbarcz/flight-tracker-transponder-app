@@ -71,12 +71,13 @@ export function renderFrame(input: FrameInput): string[] {
     '',
     wordmark(width, input.version),
     indent(dim('═'.repeat(width - 4)), width),
-    indent(
-      `api ${marker(status.connections.api)} ${status.connections.api}`,
-      width,
-    ),
     '',
     ...modules(status, width),
+    // Flush against the modules above, the way the two of them stack on a
+    // narrow terminal. The standalone `api` line that used to sit above the
+    // boxes is gone: section 3 states the same thing and states it with a
+    // version beside it.
+    ...services(status, input.version)(width),
     '',
   ];
 
@@ -161,6 +162,50 @@ function transponderRows(status: StatusSnapshot): string[] {
   ];
 }
 
+// The two services and this app, each with what it is doing and what it is
+// running. Full width and below the modules, because the versions push a row
+// past what half a terminal holds.
+function services(
+  status: StatusSnapshot,
+  version: string,
+): (width: number) => string[] {
+  return box('3 SERVICES', [
+    serviceRow(
+      'flight-tracker',
+      marker(status.connections.api),
+      status.connections.api,
+      status.serviceVersions.api,
+    ),
+    serviceRow(
+      'adsb',
+      marker(status.connections.adsb),
+      status.connections.adsb,
+      status.serviceVersions.adsb,
+    ),
+    // Not a connection, so not a ConnectionState: if this row is on the screen
+    // then this app is running, and the only thing worth saying is which build.
+    serviceRow('transponder', green('●'), 'running', version),
+  ]);
+}
+
+// Padded rather than right-aligned, so the row can be built without knowing how
+// wide the box will be. The state column fits the longest state there is.
+const SERVICE_LABEL_WIDTH = 15;
+const SERVICE_STATE_WIDTH = 19;
+
+function serviceRow(
+  label: string,
+  glyph: string,
+  state: string,
+  version: string | null,
+): string {
+  return (
+    `${label.padEnd(SERVICE_LABEL_WIDTH)}${glyph} ` +
+    `${state.padEnd(SERVICE_STATE_WIDTH)}` +
+    `${dim(version === null ? '—' : `v${version}`)}`
+  );
+}
+
 function discordRows(status: StatusSnapshot): string[] {
   const { connections, presenceState, presenceDetails } = status;
 
@@ -216,11 +261,12 @@ function logPane(logs: string[], width: number): string[] {
 
 // Every recovery the pilot has is a single letter, so every letter is on the
 // screen: an app that reports `api ! unauthorised` and keeps the way back in
-// to itself is the same as having no way back in.
+// to itself is the same as having no way back in. Quitting is not among them —
+// ctrl-c still works, it is just not something the frame needs to teach.
 function hint(showLogs: boolean, standby: boolean): string {
   return dim(
     `s sign in · c callsign · t ${standby ? 'transmit' : 'standby'} · ` +
-      `l ${showLogs ? 'hide' : 'show'} logs · ctrl-c quit`,
+      `l ${showLogs ? 'hide' : 'show'} logs`,
   );
 }
 

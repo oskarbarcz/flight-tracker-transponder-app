@@ -9,8 +9,13 @@ export type ConnectionState =
   | 'waiting-for-flight'
   | 'standby';
 
+// The two services this app talks to over the network, as opposed to the two
+// local sockets. Only these publish a version of their own.
+export type ServiceName = 'api' | 'adsb';
+
 export type StatusSnapshot = {
   connections: Record<ConnectionName, ConnectionState>;
+  serviceVersions: Record<ServiceName, string | null>;
   callsign: string | null;
   aircraftIdentifier: string | null;
   lastAcceptedReportAt: Date | null;
@@ -21,6 +26,8 @@ export type StatusSnapshot = {
 };
 
 const CONNECTIONS: ConnectionName[] = ['simulator', 'discord', 'adsb', 'api'];
+
+const SERVICES: ServiceName[] = ['api', 'adsb'];
 
 export const CONNECTION_STATES: ConnectionState[] = [
   'connected',
@@ -35,6 +42,10 @@ export class StatusRegistry {
     CONNECTIONS.map((name) => [name, 'disconnected' as ConnectionState]),
   );
 
+  private readonly serviceVersions = new Map<ServiceName, string | null>(
+    SERVICES.map((name) => [name, null]),
+  );
+
   private callsign: string | null = null;
   private aircraftIdentifier: string | null = null;
   private lastAcceptedReportAt: Date | null = null;
@@ -45,6 +56,10 @@ export class StatusRegistry {
 
   set(name: ConnectionName, state: ConnectionState): void {
     this.connections.set(name, state);
+  }
+
+  setServiceVersion(name: ServiceName, version: string | null): void {
+    this.serviceVersions.set(name, version);
   }
 
   setCallsign(callsign: string | null): void {
@@ -74,6 +89,10 @@ export class StatusRegistry {
       connections: Object.fromEntries(this.connections) as Record<
         ConnectionName,
         ConnectionState
+      >,
+      serviceVersions: Object.fromEntries(this.serviceVersions) as Record<
+        ServiceName,
+        string | null
       >,
       callsign: this.callsign,
       aircraftIdentifier: this.aircraftIdentifier,

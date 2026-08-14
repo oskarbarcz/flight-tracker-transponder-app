@@ -15,6 +15,9 @@ describe('loadConfig', () => {
     expect(config.simSampleIntervalMs).toBe(1_000);
     expect(config.queueCapacity).toBe(3_600);
     expect(config.logLevel).toBe('info');
+    // Slow on purpose: a version changes when someone deploys, and reading the
+    // API's costs a quarter of a megabyte.
+    expect(config.versionPollIntervalMs).toBe(900_000);
   });
 
   it('starts with nothing configured at all', () => {

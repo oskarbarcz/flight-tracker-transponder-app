@@ -47,6 +47,10 @@ type TokenPair = {
 const RENEW_MARGIN_MS = 60_000;
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 
+// Longer than the ordinary request budget: this one is a quarter of a megabyte
+// of JSON over whatever connection the pilot happens to have.
+const VERSION_TIMEOUT_MS = 20_000;
+
 export class FlightTrackerClient {
   private accessToken: string | null = null;
   private accessTokenExpiresAt = 0;
@@ -73,6 +77,34 @@ export class FlightTrackerClient {
     }
 
     await this.acceptTokens((await response.json()) as TokenPair);
+  }
+
+  // The API publishes no status or health route — `/`, `/health` and
+  // `/api/v1/status` are all 404 — so its own OpenAPI document is the only
+  // place it states a version, and the only one that needs no session. It is a
+  // quarter of a megabyte, which is why this is asked rarely rather than on the
+  // status tick.
+  async version(): Promise<string> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api-json`, {
+      signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `the API answered ${response.status} to its OpenAPI document`,
+      );
+    }
+
+    const document = (await response.json()) as {
+      info?: { version?: unknown };
+    };
+    const version = document.info?.version;
+
+    if (typeof version !== 'string' || version === '') {
+      throw new Error('the API document states no version');
+    }
+
+    return version;
   }
 
   async signOut(): Promise<void> {
