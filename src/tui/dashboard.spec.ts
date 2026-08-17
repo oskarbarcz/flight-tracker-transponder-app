@@ -108,7 +108,7 @@ describe('Dashboard', () => {
     view.start(handlers());
     view.stop();
 
-    expect(out.all).toContain('FLIGHT TRACKER');
+    expect(out.all).toContain('MYPREFLIGHT');
   });
 
   it('quits on ctrl-c, which raw mode stops delivering as a signal', () => {
@@ -463,8 +463,6 @@ describe('Dashboard', () => {
     view.revealLogs();
     const revealed = out.all;
 
-    // Already open: revealing again must not close it, which a plain toggle
-    // would have done.
     view.append('and here is why');
     out.written = [];
     view.revealLogs();

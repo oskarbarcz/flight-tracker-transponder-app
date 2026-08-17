@@ -34,9 +34,6 @@ const IGNORE: DashboardHandlers = {
   onTransmit: () => undefined,
 };
 
-// One line of the frame, borrowed for one answer. A password is the reason the
-// masking and the length live here rather than in the caller: the frame paints
-// what it is handed, and it should never be handed a password.
 type Field = {
   label: string;
   hint: string;
@@ -99,9 +96,6 @@ export class Dashboard {
     this.render();
   }
 
-  // For the outcome of something the pilot just asked for. A sign-in that
-  // failed silently is indistinguishable from one that was never offered, and
-  // the reason is already written to the pane — it just is not being looked at.
   revealLogs(): void {
     if (this.showLogs) {
       this.render();
@@ -115,8 +109,6 @@ export class Dashboard {
   render(): void {
     const status = this.status.snapshot();
 
-    // Screen swallows a title it has already set, so this costs a write only
-    // when something the pilot would notice has actually moved.
     this.screen.title(renderTitle(status));
     this.screen.paint(
       renderFrame({
@@ -160,8 +152,6 @@ export class Dashboard {
     });
   }
 
-  // Two fields, one after the other, because the frame has one line to spare
-  // and a pilot who is signing in is not doing anything else.
   private askSignIn(): void {
     this.ask({
       label: 'email',
@@ -184,10 +174,6 @@ export class Dashboard {
     });
   }
 
-  // One key, two meanings, taken from the state the frame is already showing so
-  // that pressing it does what the bottom line says it will. Signing out while
-  // the transponder is transmitting would strand a flight halfway through its
-  // track, so there it does nothing — which is what the greyed-out label means.
   private session(): void {
     const status = this.status.snapshot();
 
@@ -271,9 +257,6 @@ export class Dashboard {
 
     if (ENTER.includes(character)) {
       const field = this.field;
-      // A password is taken exactly as typed; everything else is trimmed,
-      // because a trailing space in a callsign is a typo and in a password it
-      // is a character.
       const typed = field?.masked === true ? this.draft : this.draft.trim();
 
       this.field = null;
@@ -313,9 +296,6 @@ export class Dashboard {
   }
 }
 
-// Anything that is not a control character. Narrower than that used to mean a
-// pilot whose password has an accent in it could not type it and would never
-// be told why; the escapes that would smear the frame are all below space.
 function printable(character: string): boolean {
   const code = character.charCodeAt(0);
 

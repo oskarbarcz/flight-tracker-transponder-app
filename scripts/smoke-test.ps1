@@ -1,9 +1,5 @@
-# Proves the compiled executable starts at all and reports the version CI
-# expects, which is the cheapest guard against a build that linked but cannot
-# run. Both integrity and release call this after compiling.
-
 param(
-  [string] $Exe = './dist/flight-tracker-transponder.exe'
+  [string] $Exe = './dist/mypreflight-transponder.exe'
 )
 
 $output = & $Exe --version 2>&1

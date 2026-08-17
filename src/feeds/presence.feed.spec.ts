@@ -3,7 +3,7 @@ import {
   type DiscordPresencePayload,
   type FlightTrackerClient,
   SessionExpiredError,
-} from '../api/flight-tracker.client';
+} from '../api/mypreflight.client';
 import type {
   DiscordActivity,
   PresenceWriter,

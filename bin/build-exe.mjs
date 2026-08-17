@@ -1,13 +1,6 @@
-// Compiles the Windows executable. This runs under bun rather than node,
-// because the icon and the file properties Windows shows in a file's
-// Details tab are only reachable through the JavaScript build API — there
-// are no CLI flags for publisher, description or copyright.
-//
-//   bun bin/build-exe.mjs
-
 import { readFileSync } from 'node:fs';
 
-const OUTFILE = 'dist/flight-tracker-transponder.exe';
+const OUTFILE = 'dist/mypreflight-transponder.exe';
 const ICON = 'assets/icon.ico';
 
 if (typeof Bun === 'undefined') {
@@ -22,13 +15,6 @@ if (token === '') {
   process.stdout.write('no ADSB_CLIENT_TOKEN given, baking an empty one\n');
 }
 
-// Stamping the icon and the properties into the PE goes through Windows
-// APIs, so bun cannot do either when cross-compiling. It does not say so: the
-// build reports success and the executable keeps bun's own steamed-bun logo
-// and bun's own version block. Release builds run on a Windows runner and get
-// ours; a build from a developer's Mac is otherwise identical, but it is
-// bun-branded rather than merely anonymous, which is worth knowing before
-// wondering why a locally built exe looks wrong.
 const onWindows = process.platform === 'win32';
 
 if (!onWindows) {
@@ -37,7 +23,7 @@ if (!onWindows) {
 
 const properties = {
   icon: ICON,
-  title: 'Flight Tracker transponder',
+  title: 'MyPreflight transponder',
   publisher: manifest.author,
   version: manifest.version,
   description: manifest.description,
@@ -60,8 +46,6 @@ try {
     },
   });
 } catch (error) {
-  // Bun throws an AggregateError on a failed build and reports the reason
-  // through its own logs, so print whatever shape actually turns up.
   process.stderr.write(`${error}\n`);
   process.exit(1);
 }

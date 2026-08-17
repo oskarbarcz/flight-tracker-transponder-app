@@ -1,8 +1,3 @@
-// Asks GitHub what the newest release is, so section 5 can say whether the
-// build the pilot is running is the current one. Unauthenticated, which GitHub
-// rate-limits to sixty requests an hour per address — far more than the version
-// poll uses.
-
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export const RELEASES_URL =
@@ -35,15 +30,10 @@ export class ReleaseClient {
       throw new Error('the latest release has no tag');
     }
 
-    // This repository tags bare versions, but a leading v is the more common
-    // convention and costs nothing to tolerate.
     return release.tag_name.replace(/^v/, '');
   }
 }
 
-// True only when `latest` is properly newer, so a development build — whose
-// version is the string `dev` — never claims an update is available, and neither
-// does anything unparseable.
 export function isUpdateAvailable(
   running: string,
   latest: string | null,

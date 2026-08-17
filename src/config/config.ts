@@ -28,11 +28,9 @@ export const BUILT_IN = {
 const DEFAULTS = {
   presencePollIntervalMs: 15_000,
   currentFlightPollIntervalMs: 30_000,
-  // A version only changes when someone deploys, and reading the API's is a
-  // quarter of a megabyte, so this is deliberately slow.
   versionPollIntervalMs: 15 * 60_000,
   simSampleIntervalMs: 1_000,
-  queueCapacity: 3_600,
+  queueCapacity: 360,
   logLevel: 'info' as LogLevel,
 };
 
@@ -65,7 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ),
     queueCapacity: number(env.QUEUE_CAPACITY, DEFAULTS.queueCapacity),
     logLevel: logLevel(env.LOG_LEVEL),
-    logFilePath: env.LOG_FILE_PATH ?? 'flight-tracker-transponder.log',
+    logFilePath: env.LOG_FILE_PATH ?? 'mypreflight-transponder.log',
   };
 }
 

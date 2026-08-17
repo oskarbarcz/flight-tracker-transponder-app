@@ -49,8 +49,11 @@ jobs:
       - name: 'Check the dashboard renders from the executable'
         shell: 'pwsh'
         run: './scripts/check-frame.ps1'
+      - name: 'Check the tray icon reaches the notification area'
+        shell: 'pwsh'
+        run: './scripts/check-tray.ps1'
       - name: 'Attach the executable to the GitHub release'
         shell: 'bash'
-        run: "gh release upload $(jq -r '.version' package.json) dist/flight-tracker-transponder.exe"
+        run: "gh release upload $(jq -r '.version' package.json) dist/mypreflight-transponder.exe"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

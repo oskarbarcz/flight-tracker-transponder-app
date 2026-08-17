@@ -2,12 +2,8 @@ import type { PositionReport } from '../domain/position-report';
 
 const REQUEST_TIMEOUT_MS = 7_000;
 
-// Enough of the service's answer to name the field it objected to, which is
-// the whole reason for reading the body at all. A validation error lists one
-// message per field, so this is generous rather than tight.
 const MAX_DETAIL_LENGTH = 400;
 
-// The two 4xx codes that say "later", not "never".
 const TRANSIENT_STATUSES = [408, 429];
 
 export class AdsbTokenRejectedError extends Error {
@@ -16,9 +12,6 @@ export class AdsbTokenRejectedError extends Error {
   }
 }
 
-// The service will not accept this report however many times it is offered —
-// a malformed payload, an unacceptable callsign. Retrying is pointless and
-// actively harmful, since the report sits at the head of the queue.
 export class AdsbReportRejectedError extends Error {
   constructor(
     readonly status: number,
@@ -30,8 +23,6 @@ export class AdsbReportRejectedError extends Error {
   }
 }
 
-// Something that may work on the next attempt: the service is down, slow, or
-// asking us to come back later.
 export class AdsbPublishFailedError extends Error {
   constructor(
     readonly status: number,
@@ -65,9 +56,6 @@ export class AdsbClient {
     }
   }
 
-  // `GET /` is the service's documented status endpoint — `{ status, version }`
-  // — and it needs no token, so this answers even when the client token is the
-  // thing that is wrong.
   async version(): Promise<string> {
     const response = await this.fetchImpl(`${this.baseUrl}/`, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -123,9 +111,6 @@ function isPermanent(status: number): boolean {
   return status >= 400 && status < 500 && !TRANSIENT_STATUSES.includes(status);
 }
 
-// A 400 whose body nobody reads is a bug report with the evidence torn off:
-// the service names the field it refused, and that name is the difference
-// between a five-minute fix and a guess.
 async function detailOf(response: Response): Promise<string> {
   try {
     const body = await response.text();

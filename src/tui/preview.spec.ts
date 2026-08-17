@@ -5,7 +5,7 @@ describe('previewFrame', () => {
   it('draws the box characters CI checks for', () => {
     const frame = previewFrame('0.3.0');
 
-    for (const character of ['┌', '┐', '└', '┘', '│', '─', '═']) {
+    for (const character of ['╭', '╮', '╰', '╯', '│', '─', '═']) {
       expect(frame).toContain(character);
     }
   });

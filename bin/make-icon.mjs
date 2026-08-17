@@ -1,14 +1,3 @@
-// Regenerates assets/icon.ico from assets/icon.svg.
-//
-// The .ico is committed, because the Windows runner that compiles the
-// executable has no rasteriser. Run this on macOS whenever the logo changes:
-//
-//   node bin/make-icon.mjs
-//
-// Every frame is written as a classic 32-bit DIB rather than as an embedded
-// PNG. Both are legal in an .ico, but only the DIB form is guaranteed to
-// survive whatever resource writer bun uses to stamp the icon into the PE.
-
 import { spawnSync } from 'node:child_process';
 import { inflateSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,24 +7,6 @@ import { join } from 'node:path';
 const SOURCE = 'assets/icon.svg';
 const OUTFILE = 'assets/icon.ico';
 
-// Largest first, and that order is load-bearing rather than cosmetic.
-//
-// Bun stamps the icon by writing each frame of this file as `RT_ICON` 1, 2, 3…
-// in the order it finds them, and building an `RT_GROUP_ICON` that names them
-// all. What it does not do is delete the group it shipped with: its own
-// `IDI_MYICON` survives in the executable, still saying "I am one 256x256
-// icon and my image is resource id 1". Because the PE format sorts named
-// resources ahead of numbered ones, that stale group is the first one Windows
-// finds, and it is the one the taskbar and Explorer resolve the app icon
-// through — so whatever lands at id 1 is the icon, whatever the group we
-// supply says.
-//
-// Ascending order put the 16px frame at id 1. Windows read 16x16 pixels out of
-// a slot labelled 256x256: pixelated everywhere it was scaled up, and blank in
-// the views that ask for a large icon. Descending order puts the 256px frame
-// there instead, which is the one size that degrades gracefully into all the
-// others. scripts/check-icon.ps1 asserts the result, because nothing else
-// would notice it regressing.
 const SIZES = [256, 128, 64, 48, 32, 16];
 
 const PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -69,8 +40,6 @@ function rasterise(source, size, target) {
   return readFileSync(target);
 }
 
-// A deliberately small PNG reader: enough for what sips writes, and loud
-// about anything else rather than quietly producing a broken icon.
 function decodePng(png) {
   if (!png.subarray(0, 8).equals(PNG_MAGIC)) {
     throw new Error('not a PNG');
@@ -177,10 +146,6 @@ function paeth(left, up, corner) {
   return dUp <= dCorner ? up : corner;
 }
 
-// An .ico frame is a BITMAPINFOHEADER whose height covers both the colour
-// rows and the 1-bit mask beneath them, then BGRA rows bottom-up, then the
-// mask. Windows leans on the alpha channel for 32-bit frames, but the mask
-// still has to be there and still has to be padded to four bytes a row.
 function toDib({ width, height, pixels }) {
   const maskStride = (((width + 31) >> 5) << 2);
   const header = Buffer.alloc(40);

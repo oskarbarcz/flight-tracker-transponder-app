@@ -20,6 +20,7 @@ Four endpoints and two local sockets define the whole surface of this app.
 | `GET /api/v1/user/me` | `currentFlightId` — set at check-in, cleared when the flight closes |
 | `GET /api/v1/flight/:id` | `callsign`, plus route and timesheet if ever needed locally |
 | `GET /api/v1/user/me/discord-presence` | the activity payload, or `204` |
+| `GET /api-json` | `info.version`, for the status view — a quarter of a megabyte, read only because there is no status route. **Wanted: `GET /` returning `{ status, version }`** as the ADS-B service has; this app already prefers it and falls back. |
 
 **Local sockets**: the SimConnect named pipe (`\\?\pipe\Microsoft Flight Simulator\SimConnect`,
 discovered from `SimConnect.cfg` or the registry by `node-simconnect`, or reached over IPv4 —
@@ -98,16 +99,31 @@ window a pilot opens twice a month. Tauri would cut the footprint but split the 
 Rust for SimConnect and Discord RPC, which is the maintenance problem this change exists to
 end.
 
-So: a Node process, `node-simconnect` and a Discord RPC client in-process, and a tray icon
-for state and quit. Sign-in happens in a small local window or, failing that, a
-`127.0.0.1`-bound page the tray opens in the default browser.
+So: a Node process, `node-simconnect` and Discord's IPC in-process, and a tray icon for state.
+Sign-in happens on the dashboard, which turned out to be a better answer than a local window or a
+browser page: it is one keystroke and it needs nothing to render it.
 
-**Open spike.** Node has no first-class tray binding. `systray2` (a bundled Go helper the
-Node process drives over stdio) is the leading candidate; a native `trayicon` addon is the
-alternative. If neither survives the spike, the fallback is a Windows service with no tray
-and a local status page, which meets every requirement except discoverability. Resolve this
-before packaging work starts, because the choice decides whether the bundle carries a helper
-binary.
+**Spike resolved: neither. The tray is Win32 called directly through `bun:ffi`.**
+
+`systray2` was the leading candidate and would have cost a resident Go process and an
+eleven-megabyte payload extracted to a temp directory at startup — roughly a third of the memory
+saved by dropping the Discord library, and the end of the single-file promise. A native
+`trayicon` addon would have meant shipping a `.node` binary into a `bun --compile` bundle.
+
+`bun:ffi` needs neither: `dlopen` on `shell32.dll` and `user32.dll`, and the icon costs nothing
+beyond the app already running. What makes it small enough to be worth doing is the scope — an
+icon and a tooltip, no menu. A menu would need a WNDPROC as a `JSCallback` and a message pump to
+drive it; without one the owner window can be an ordinary window that is never shown, sitting
+behind `DefWindowProcW`, and omitting `NIF_MESSAGE` means the shell sends no mouse notifications
+that nobody is there to read. The keys stay on the dashboard, where they already are.
+
+Two consequences worth writing down. The icon is **drawn** rather than shipped — a disc in the
+state's colour, generated as an .ico image in memory and handed to `CreateIconFromResourceEx` —
+because bun stamps exactly one icon resource into the executable and that one is the app's own,
+and because at sixteen pixels a brand glyph is mush while a coloured disc is not. And none of it
+can be exercised off Windows, so every call is checked, any failure degrades to no tray at all
+with a log line naming the call that refused, and the executable answers `--tray-check`, which
+CI runs on a Windows runner. That last part is the only real test the tray gets.
 
 ### The callsign comes from the API, never from the sim
 
@@ -140,9 +156,27 @@ track nobody can tell apart. The two-rate split went with it: with the transitio
 the work that mattered, a separate ground rate was only buying a saving on a parked aircraft
 that a flat ten seconds already makes small.
 
-Reports that fail to publish go to a bounded FIFO queue (cap 3600 — one hour airborne),
+Reports that fail to publish go to a bounded FIFO queue (cap 360 — one hour at one report
+every ten seconds),
 retried with backoff, oldest dropped first. The API sorts and deduplicates by timestamp, so
 late arrivals are harmless; a gap is not.
+
+### Discord's IPC is spoken directly, not through a library
+
+`@xhayper/discord-rpc` was the first implementation and cost more resident memory than the whole
+bun runtime — measured at +34MB against a 23MB baseline, repeated and settled — because it brings
+`discord-api-types` (6.4MB), `@discordjs/rest` and `ws` along for a WebSocket transport this app
+never uses. The app called four methods on it.
+
+What those four methods do is an eight-byte header, a handshake and one frame per activity over a
+local socket. Written against `node:net` that is about 120 lines and measures ~9MB doing the same
+work, verified against the real Discord client. The wire shape is copied field for field from what
+the library sent, down to `type: 0` and `created_at`, so the swap is not also a change to what
+Discord displays — a test asserts that payload exactly.
+
+Two things came free. A failed connect now tears its socket down rather than abandoning it, which
+the library did not do; and the framing copes with a frame split across reads, which a test drives
+one byte at a time. Three dependencies left the tree.
 
 ### Squawk is BCD, but not always
 

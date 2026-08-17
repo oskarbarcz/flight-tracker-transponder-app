@@ -13,10 +13,8 @@ describe('loadConfig', () => {
     expect(config.apiBaseUrl).toBe('https://flights.example.com');
     expect(config.presencePollIntervalMs).toBe(15_000);
     expect(config.simSampleIntervalMs).toBe(1_000);
-    expect(config.queueCapacity).toBe(3_600);
+    expect(config.queueCapacity).toBe(360);
     expect(config.logLevel).toBe('info');
-    // Slow on purpose: a version changes when someone deploys, and reading the
-    // API's costs a quarter of a megabyte.
     expect(config.versionPollIntervalMs).toBe(900_000);
   });
 
@@ -94,6 +92,6 @@ describe('loadConfig', () => {
     });
 
     expect(config.presencePollIntervalMs).toBe(15_000);
-    expect(config.queueCapacity).toBe(3_600);
+    expect(config.queueCapacity).toBe(360);
   });
 });

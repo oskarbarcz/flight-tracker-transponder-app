@@ -1,4 +1,4 @@
-import type { DiscordPresencePayload } from '../api/flight-tracker.client';
+import type { DiscordPresencePayload } from '../api/mypreflight.client';
 
 export type DiscordActivity = {
   details: string;

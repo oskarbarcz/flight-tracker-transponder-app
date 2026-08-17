@@ -1,7 +1,5 @@
 export type ConnectionName = 'simulator' | 'discord' | 'adsb' | 'api';
 
-// `standby` is the transponder's own word for it, and only `adsb` ever wears
-// it: the connection is fine, the pilot has switched transmission off.
 export type ConnectionState =
   | 'connected'
   | 'disconnected'
@@ -9,8 +7,6 @@ export type ConnectionState =
   | 'waiting-for-flight'
   | 'standby';
 
-// The two services this app talks to over the network, as opposed to the two
-// local sockets. Only these publish a version of their own.
 export type ServiceName = 'api' | 'adsb';
 
 export type Crew = {
@@ -24,9 +20,6 @@ export type ServiceAirport = {
   name: string | null;
 };
 
-// The flight as Flight Tracker describes it, which is a different thing from
-// what the simulator has loaded. Both are shown, because the disagreement
-// between them is a fault worth seeing.
 export type CurrentService = {
   callsign: string;
   departure: ServiceAirport | null;
@@ -75,9 +68,6 @@ export class StatusRegistry {
     SERVICES.map((name) => [name, null]),
   );
 
-  // Why a connection is unhappy, in words, kept apart from the state so the
-  // dashboard can say more than `disconnected`. A pilot whose simulator will
-  // not connect should not have to open the debug pane to find out why.
   private readonly faults = new Map<ConnectionName, string>();
 
   private latestRelease: string | null = null;
@@ -132,9 +122,6 @@ export class StatusRegistry {
     this.aircraftIdentifier = identifier;
   }
 
-  // What the transponder is actually squawking, taken from the last sample
-  // rather than from the last report: it is the aircraft's state, and it is
-  // worth seeing even while nothing is being published.
   setTransponder(squawk: string | null, groundSpeedKt: number | null): void {
     this.squawk = squawk;
     this.groundSpeedKt = groundSpeedKt;
