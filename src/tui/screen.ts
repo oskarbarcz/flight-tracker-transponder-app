@@ -6,9 +6,6 @@ const CURSOR_HIDE = '\u001b[?25l';
 const CURSOR_SHOW = '\u001b[?25h';
 const ERASE_LINE = '\u001b[2K';
 
-// The window title lives on a small stack, so the shell gets its own title
-// back on the way out. Terminals that keep no stack ignore both of these and
-// simply hold the last title we set.
 const TITLE_PUSH = '\u001b[22;2t';
 const TITLE_POP = '\u001b[23;2t';
 
@@ -20,9 +17,6 @@ function setTitle(text: string): string {
   return `\u001b]0;${text}\u0007`;
 }
 
-// A stray BEL or ESC would close the escape early and spray the rest of the
-// title across the frame. Callsigns already arrive filtered, so this only
-// guards a future caller.
 function printableOnly(text: string): string {
   return [...text]
     .filter((character) => character >= ' ' && character !== '\u007f')

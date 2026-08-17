@@ -12,7 +12,7 @@ import type { SimSample } from '../domain/sim-sample';
 
 const DEFINITION_ID = 1;
 const REQUEST_ID = 1;
-const CLIENT_NAME = 'Flight Tracker Transponder';
+const CLIENT_NAME = 'MyPreflight transponder';
 
 type VariableSpec = [name: string, unit: string, type: SimConnectDataType];
 

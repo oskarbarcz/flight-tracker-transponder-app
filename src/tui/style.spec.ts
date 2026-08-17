@@ -71,8 +71,6 @@ describe('toVisibleWidth', () => {
   it('never slices an escape in half', () => {
     const cut = toVisibleWidth(`${green('ab')}${green('cd')}`, 3);
 
-    // Half an escape leaves bracket-and-digit debris behind, which counts as
-    // visible columns and would push this past three.
     expect(visibleWidth(cut)).toBe(3);
   });
 

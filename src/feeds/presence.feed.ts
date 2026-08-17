@@ -3,7 +3,7 @@ import {
   type FlightTrackerClient,
   NotSignedInError,
   SessionExpiredError,
-} from '../api/flight-tracker.client';
+} from '../api/mypreflight.client';
 import {
   type PresenceWriter,
   toDiscordActivity,

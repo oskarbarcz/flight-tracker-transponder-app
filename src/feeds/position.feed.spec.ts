@@ -40,9 +40,6 @@ type Harness = {
 
 function harness(
   capacity = 10,
-  // Every sample publishes by default: these tests are about the queue and the
-  // retries, not about how often a report is due. One test wants the real
-  // cadence and passes it.
   policy: RatePolicy = new RatePolicy(1),
 ): Harness {
   const published: PositionReport[] = [];
@@ -228,9 +225,6 @@ describe('PositionFeed', () => {
     expect(published).toHaveLength(2);
   });
 
-  // What the pilot actually saw: `sent 0 dropped 0`, the backoff doubling to
-  // 30 seconds, and one report the service would never accept sitting at the
-  // head of the queue with the whole flight behind it.
   it('drops a report the service refuses rather than wedging the queue', async () => {
     const { feed, published, queue, status, failWith } = harness();
     feed.setCurrentFlightCallsign('LH455');
@@ -244,7 +238,6 @@ describe('PositionFeed', () => {
     expect(queue.size).toBe(0);
     expect(status.snapshot().droppedCount).toBe(1);
 
-    // The next report is not held behind the refused one.
     failWith(null);
     feed.accept(
       sample({ sampledAt: new Date(Date.UTC(2026, 7, 13, 12, 0, 1)) }),
@@ -353,9 +346,6 @@ describe('PositionFeed', () => {
     expect(feed.isTransmitting).toBe(true);
   });
 
-  // The cadence the pilot actually sees, driven by the real policy rather than
-  // the every-sample one the rest of these tests use: sixty seconds of a
-  // one-hertz simulator is six reports, ten seconds apart.
   it('publishes one report every ten seconds of simulator time', async () => {
     const { feed, published } = harness(10, new RatePolicy());
     feed.setCurrentFlightCallsign('LH455');

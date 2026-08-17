@@ -19,8 +19,6 @@ describe('ReleaseClient', () => {
     await expect(client.latest()).resolves.toBe('0.8.0');
   });
 
-  // This repository tags bare versions, but the leading v is the commoner
-  // convention and costs nothing to tolerate.
   it('tolerates a leading v', async () => {
     const client = new ReleaseClient(
       'https://x',
@@ -60,8 +58,6 @@ describe('isUpdateAvailable', () => {
     expect(isUpdateAvailable('0.7.0', null)).toBe(false);
   });
 
-  // A build straight from source calls itself `dev`. Comparing that to anything
-  // would offer an update on every run of every development session.
   it.each([
     ['dev', '9.9.9'],
     ['0.7.0', 'nightly'],

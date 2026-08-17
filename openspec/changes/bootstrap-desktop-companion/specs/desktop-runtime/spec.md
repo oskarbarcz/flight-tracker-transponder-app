@@ -72,14 +72,31 @@ than publishing reports that are silently rejected.
 
 The system SHALL show, at any moment, whether each of the simulator, the Discord client, the
 ADS-B service and the API is connected, together with the callsign it is publishing under and
-the aircraft identifier the simulator reports. The tray SHALL offer sign-in, sign-out and
-quit.
+the aircraft identifier the simulator reports.
+
+The system SHALL also show its state in the notification area, since that is the only part of it
+visible while the simulator is fullscreen. That indicator SHALL distinguish a fault from standby
+from waiting for a flight from transmitting, and SHALL name on hover what it is doing and any
+fault. It SHALL offer no commands — those live on the status view — and SHALL cost neither a
+second process nor a second file. Where the notification area cannot be reached, the system SHALL
+carry on without it and SHALL say which call was refused.
 
 #### Scenario: A pilot's track is missing
 
 - **WHEN** the pilot opens the status view while the simulator identifier disagrees with the
   flight callsign
 - **THEN** both values are visible, making the mismatch diagnosable without logs
+
+#### Scenario: The simulator is fullscreen
+
+- **WHEN** the pilot is flying and the console is behind the simulator
+- **THEN** the notification area shows whether the transponder is transmitting, and hovering it
+  names the callsign and how much has been sent
+
+#### Scenario: The notification area refuses the icon
+
+- **WHEN** any of the calls that place the icon fails
+- **THEN** both feeds carry on and the log names the call that failed
 
 #### Scenario: Everything is healthy in flight
 

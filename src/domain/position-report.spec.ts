@@ -41,9 +41,6 @@ describe('decodeSquawk', () => {
     expect(decodeSquawk(0x1200)).toBe('1200');
   });
 
-  // The aircraft that hands back a plain decimal is the reason the whole feed
-  // used to stop: its BCD reading is not four octal digits, the squawk was
-  // left out, and a report missing a field is answered 400.
   it.each([
     [4744, '4744'],
     [7000, '7000'],
@@ -106,9 +103,6 @@ describe('toPositionReport', () => {
     expect(report.verticalRate).toBe(-1850);
   });
 
-  // The service lists all thirteen fields as required, so leaving one out
-  // costs the whole report — and, because the report sits at the head of the
-  // queue being retried, every report behind it too.
   it('sends every field the contract requires, whatever the simulator withheld', () => {
     const report = toPositionReport(
       sample({
@@ -149,9 +143,6 @@ describe('toPositionReport', () => {
     expect(report.altitude).toBe(35000);
   });
 
-  // Pinned to the literal, not to the constant: 2000 is the ICAO code for an
-  // aircraft with no assignment, and swapping it for something a controller
-  // would read as a real assignment should fail a test rather than pass one.
   it('falls back to 2000, the code for an aircraft with no assignment', () => {
     expect(NO_SQUAWK).toBe('2000');
   });

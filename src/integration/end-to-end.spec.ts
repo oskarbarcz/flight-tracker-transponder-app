@@ -2,7 +2,7 @@ import { StubService } from './stub-services';
 import {
   FlightTrackerClient,
   SessionExpiredError,
-} from '../api/flight-tracker.client';
+} from '../api/mypreflight.client';
 import { InMemoryTokenStore } from '../api/token-store';
 import {
   AdsbClient,
@@ -82,17 +82,17 @@ describe('flight-tracker API integration', () => {
   let presenceStatus = 200;
   let signInStatus = 200;
   let flightBody: unknown;
+  let statusBody: unknown;
   let refreshes = 0;
   let accessTokensIssued = 0;
 
   beforeEach(async () => {
     presenceStatus = 200;
     signInStatus = 200;
+    statusBody = undefined;
     flightBody = {
       id: FLIGHT_ID,
       callsign: 'AAL 4908',
-      // The shape a flight leg's airports really have: `iataCode` and
-      // `icaoCode`, whatever the OpenAPI document says about strings.
       airports: [
         { iataCode: 'BOS', icaoCode: 'KBOS', name: 'Boston Logan' },
         { iataCode: 'PHL', icaoCode: 'KPHL', name: 'Philadelphia' },
@@ -153,6 +153,10 @@ describe('flight-tracker API integration', () => {
         presenceStatus === 204
           ? { status: 204 }
           : { status: 200, body: presencePayload },
+      'GET /': () =>
+        statusBody === undefined
+          ? { status: 404, body: { message: 'Cannot GET /', statusCode: 404 } }
+          : { status: 200, body: statusBody },
       'GET /api-json': () => ({
         status: 200,
         body: { openapi: '3.0.0', info: { title: 'x', version: '3.24.0' } },
@@ -212,8 +216,6 @@ describe('flight-tracker API integration', () => {
     );
   });
 
-  // The message a pilot reads after mistyping a password, which used to be
-  // about a stored session they had never had.
   it('blames the credentials when they are what was rejected', async () => {
     signInStatus = 401;
 
@@ -241,9 +243,6 @@ describe('flight-tracker API integration', () => {
     });
   });
 
-  // `airports` is documented as an array of strings. If it ever really is one,
-  // the route goes blank and the callsign — which is what the feed needs —
-  // still arrives, rather than an exception taking the whole poll down.
   it('settles for no route rather than throwing on an unexpected shape', async () => {
     flightBody = {
       id: FLIGHT_ID,
@@ -265,8 +264,22 @@ describe('flight-tracker API integration', () => {
     });
   });
 
-  // Section 5 of the dashboard has to say something useful precisely when the
-  // session is the thing that is broken, so the version must not need one.
+  it('prefers a status endpoint over the OpenAPI document when one answers', async () => {
+    statusBody = { status: 'OK', version: '4.0.0' };
+
+    const flightTracker = client();
+
+    await expect(flightTracker.version()).resolves.toBe('4.0.0');
+    expect(api.requestsTo('/api-json')).toHaveLength(0);
+  });
+
+  it('falls back to the document while the API has no status route', async () => {
+    const flightTracker = client();
+
+    await expect(flightTracker.version()).resolves.toBe('3.24.0');
+    expect(api.requestsTo('/api-json')).toHaveLength(1);
+  });
+
   it('reads its version out of the OpenAPI document, with no session', async () => {
     const flightTracker = new FlightTrackerClient(
       api.baseUrl,
@@ -324,9 +337,6 @@ describe('ADS-B service integration', () => {
   let publishStatus = 200;
   let publishBody: unknown;
 
-  // What the real service does with a report that is missing a field: its
-  // `CreatePositionRequest` lists all thirteen as required, and NestJS answers
-  // a validation error rather than storing anything.
   const VALIDATION_ERROR = {
     message: ['squawk must be a string'],
     error: 'Bad Request',
@@ -369,8 +379,6 @@ describe('ADS-B service integration', () => {
     const feed = new PositionFeed(
       new AdsbClient(adsbService.baseUrl, token),
       new PositionQueue(10),
-      // Every sample publishes: this is about the ADS-B contract, not the
-      // cadence the reports arrive at.
       new RatePolicy(1),
       status,
       silentLogger(),
@@ -468,8 +476,6 @@ describe('ADS-B service integration', () => {
     expect(status.snapshot().connections.adsb).toBe('unauthorised');
   });
 
-  // Same reasoning as the API's: the version has to be readable when the client
-  // token is the thing that is wrong, so it comes off the public status route.
   it('reads its version off the status endpoint, with no token', async () => {
     await expect(
       new AdsbClient(adsbService.baseUrl, 'wrong-token').version(),
@@ -524,15 +530,12 @@ describe('ADS-B service integration', () => {
       ),
     ).rejects.toThrow('squawk must be a string');
 
-    // And it does not become a report that is retried until the queue overflows.
     feed.accept(sample());
     await feed.drain();
 
     expect(adsbService.requestsTo('/api/v1/position')).toHaveLength(2);
   });
 
-  // 429 and 408 are the two 4xx that mean "later" rather than "never", so they
-  // stay on the retry path with the 5xx family.
   it.each([
     [400, 'rejected'],
     [404, 'rejected'],

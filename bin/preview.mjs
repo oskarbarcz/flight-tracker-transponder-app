@@ -1,20 +1,3 @@
-// Serves index.html and forwards its API calls to the ADS-B service, so the
-// track preview can be looked at on a development machine.
-//
-//   ADSB_CLIENT_TOKEN=… npm run preview     (or put it in .env)
-//
-// This is not a way around CORS so much as a way of not needing one. The
-// service answers `access-control-allow-origin: https://flights.barcz.me` and
-// nothing else, so a page opened from the filesystem or from any localhost port
-// makes a cross-origin request that the browser refuses to hand back — note
-// that the *service* replies 200, it is the browser that withholds the body.
-// Served from here the page and the data share an origin, so the same-origin
-// policy never comes into it and there is nothing to disable.
-//
-// The other reason it is a proxy: the token stays in this process. It has no
-// business being in a page that lives in a public repository, which is where it
-// was.
-
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 
@@ -39,9 +22,6 @@ const server = createServer((request, response) => {
   });
 });
 
-// Loopback only, and deliberately: every request this forwards carries the
-// ADS-B client token, so it must not be something the rest of the network can
-// borrow.
 server.listen(PORT, '127.0.0.1', () => {
   process.stdout.write(
     `preview on http://127.0.0.1:${PORT} — /api proxied to ${BASE_URL}\n`,
@@ -87,8 +67,6 @@ async function proxy(url, response) {
     .end(body);
 }
 
-// The same file the app itself reads, parsed only as far as this needs it: one
-// key, optionally quoted.
 async function tokenFromEnvFile() {
   try {
     const text = await readFile('.env', 'utf-8');

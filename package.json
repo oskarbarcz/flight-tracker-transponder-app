@@ -1,11 +1,11 @@
 {
   "name": "flight-tracker-transponder-app",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
-  "homepage": "https://flights.barcz.me",
+  "homepage": "https://mypreflight.io",
   "author": "oskarbarcz",
   "license": "Unlicense",
-  "description": "Desktop companion feeding simulator positions to Flight Tracker and publishing Discord rich presence",
+  "description": "The desktop companion app for MyPreflight platform.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -23,7 +23,6 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@xhayper/discord-rpc": "^1.3.4",
     "dotenv": "^17.4.2",
     "node-simconnect": "^4.1.1"
   },

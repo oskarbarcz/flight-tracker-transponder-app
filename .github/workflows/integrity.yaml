@@ -65,3 +65,6 @@ jobs:
       - name: 'Check the dashboard renders from the executable'
         shell: 'pwsh'
         run: './scripts/check-frame.ps1'
+      - name: 'Check the tray icon reaches the notification area'
+        shell: 'pwsh'
+        run: './scripts/check-tray.ps1'

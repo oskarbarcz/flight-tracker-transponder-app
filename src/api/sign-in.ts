@@ -23,7 +23,7 @@ export async function promptForSignIn(
     let password: string;
 
     try {
-      email = (await prompt.ask('Flight Tracker email: ')).trim();
+      email = (await prompt.ask('MyPreflight email: ')).trim();
       password = await prompt.askSecret('Password: ');
     } catch (error) {
       if (error instanceof PromptCancelledError) {

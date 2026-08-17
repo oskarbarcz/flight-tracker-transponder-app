@@ -42,9 +42,6 @@ export class NotSignedInError extends Error {
   }
 }
 
-// Distinct from SessionExpiredError, which used to cover this too: a pilot who
-// has just mistyped a password reads "the stored session is no longer accepted"
-// and has no idea it was talking about the thing they typed a second ago.
 export class SignInRejectedError extends Error {
   constructor(status: number) {
     super(
@@ -63,9 +60,9 @@ type TokenPair = {
 const RENEW_MARGIN_MS = 60_000;
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 
-// Longer than the ordinary request budget: this one is a quarter of a megabyte
-// of JSON over whatever connection the pilot happens to have.
 const VERSION_TIMEOUT_MS = 20_000;
+
+const STATUS_TIMEOUT_MS = 4_000;
 
 export class FlightTrackerClient {
   private accessToken: string | null = null;
@@ -95,12 +92,33 @@ export class FlightTrackerClient {
     await this.acceptTokens((await response.json()) as TokenPair);
   }
 
-  // The API publishes no status or health route — `/`, `/health` and
-  // `/api/v1/status` are all 404 — so its own OpenAPI document is the only
-  // place it states a version, and the only one that needs no session. It is a
-  // quarter of a megabyte, which is why this is asked rarely rather than on the
-  // status tick.
   async version(): Promise<string> {
+    return (
+      (await this.versionFromStatus()) ?? (await this.versionFromDocument())
+    );
+  }
+
+  private async versionFromStatus(): Promise<string | null> {
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}/`, {
+        signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const body = (await response.json()) as { version?: unknown };
+
+      return typeof body.version === 'string' && body.version !== ''
+        ? body.version
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async versionFromDocument(): Promise<string> {
     const response = await this.fetchImpl(`${this.baseUrl}/api-json`, {
       signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
     });
@@ -165,11 +183,6 @@ export class FlightTrackerClient {
       };
     };
 
-    // `airports` is documented as an array of strings, which the shape of every
-    // other airport in this API says it is not. Read it for what it turns out
-    // to be and settle for less rather than throwing: a missing airport name
-    // costs one line of the dashboard, an exception costs the callsign and so
-    // the whole feed.
     const airports = Array.isArray(flight.airports) ? flight.airports : [];
 
     return {
@@ -269,10 +282,6 @@ function text(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
-// Both spellings the API uses for an airport: flight legs carry
-// `iataCode`/`icaoCode`, the airport endpoints carry `iata`/`icao`. A bare
-// string is an id, which is no use here without another request, so it reads as
-// nothing rather than as a code.
 function toAirport(value: unknown): Airport | null {
   if (typeof value !== 'object' || value === null) {
     return null;

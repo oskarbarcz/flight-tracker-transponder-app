@@ -16,7 +16,7 @@ import {
   FlightTrackerClient,
   NotSignedInError,
   SessionExpiredError,
-} from './api/flight-tracker.client';
+} from './api/mypreflight.client';
 import { AdsbClient, AdsbTokenRejectedError } from './adsb/adsb.client';
 import { IpcPresenceWriter } from './discord/ipc-presence.writer';
 import { isPlausibleCallsign } from './domain/callsign';
@@ -25,6 +25,8 @@ import { RatePolicy } from './domain/rate-policy';
 import { PositionFeed } from './feeds/position.feed';
 import { PresenceFeed } from './feeds/presence.feed';
 import { PROTOCOL_NAMES, SimconnectSource } from './sim/simconnect.source';
+import { NoTray, type Tray, trayColour, trayTooltip } from './tray/tray';
+import { openWindowsTray } from './tray/win32.tray';
 
 const SESSION_FILE = 'session.json';
 
@@ -96,8 +98,6 @@ async function bootstrap(): Promise<void> {
       );
 
       if (!signedIn) {
-        // The dashboard is about to clear the screen over whatever went wrong
-        // here, so the way back in is worth naming before it does.
         logger.warn('not signed in: press s on the dashboard to try again');
       }
     } else {
@@ -134,9 +134,6 @@ async function bootstrap(): Promise<void> {
   };
 
   const overrideCallsign = (callsign: string | null): void => {
-    // Checked here rather than discovered as a 400 per second: the API's own
-    // callsigns are taken as given, but a hand-typed one is a typo waiting to
-    // stall the queue behind a report the service will never accept.
     if (callsign !== null && !isPlausibleCallsign(callsign)) {
       logger.warn(
         `${callsign} is not a callsign the ADS-B service will accept: two to twelve letters, digits or hyphens`,
@@ -151,16 +148,12 @@ async function bootstrap(): Promise<void> {
     logger.warn(
       callsign === null
         ? 'callsign override released: following the current flight again'
-        : `callsign overridden to ${callsign}: publishing without a Flight Tracker flight`,
+        : `callsign overridden to ${callsign}: publishing without a MyPreflight flight`,
     );
   };
 
   const reportedVersions = new Map<ServiceName, string>();
 
-  // A version nobody could read leaves the row showing a dash rather than
-  // stopping anything, and it is only worth a log line the first time it
-  // changes: on a long flight this runs dozens of times and says the same
-  // thing.
   const readVersion = async (
     name: ServiceName,
     read: () => Promise<string>,
@@ -180,9 +173,6 @@ async function bootstrap(): Promise<void> {
     }
   };
 
-  // One poll fills both section 1 and section 2: the crew comes off the same
-  // `/user/me` the current flight id already came from, so knowing who is
-  // signed in costs no extra request.
   const pollCurrentFlight = async (): Promise<void> => {
     try {
       const me = await api.getCurrentUser();
@@ -214,8 +204,6 @@ async function bootstrap(): Promise<void> {
       ) {
         status.set('api', 'unauthorised');
         status.setFault('api', 'not signed in; press s to sign in');
-        // Section 1 says "not signed in" rather than keeping the name of a
-        // session the API has stopped accepting.
         status.setCrew(null);
         status.setService(null);
         applyCallsign(null);
@@ -238,9 +226,6 @@ async function bootstrap(): Promise<void> {
         )
       : null;
 
-  // Signing in is the one thing a pilot can do that the app cannot do for
-  // itself, so it is reachable for as long as the app is running rather than
-  // only in the seconds before the dashboard takes the console.
   const signIn = (email: string, password: string): void => {
     void api.signIn(email, password).then(
       async () => {
@@ -248,8 +233,6 @@ async function bootstrap(): Promise<void> {
         status.set('api', 'connected');
         status.setFault('api', null);
         dashboard?.revealLogs();
-        // Without this the pilot waits out the poll interval wondering whether
-        // anything happened.
         await pollCurrentFlight();
       },
       (error: unknown) => {
@@ -283,6 +266,18 @@ async function bootstrap(): Promise<void> {
     positionFeed.setTransmitting(!positionFeed.isTransmitting);
   };
 
+  const tray: Tray = await openWindowsTray(logger.child('tray'));
+
+  const paintTray = (): void => {
+    const snapshot = status.snapshot();
+    tray.show(
+      trayColour(snapshot),
+      trayTooltip(snapshot, process.env.APP_VERSION ?? 'dev'),
+    );
+  };
+
+  paintTray();
+
   let stopping = false;
   const shutdown = async (): Promise<void> => {
     if (stopping) {
@@ -290,6 +285,7 @@ async function bootstrap(): Promise<void> {
     }
 
     stopping = true;
+    tray.hide();
     dashboard?.stop();
     logSink = streamSink;
     logger.info('shutting down');
@@ -338,9 +334,6 @@ async function bootstrap(): Promise<void> {
               );
             },
             (error: unknown) => {
-              // Onto the frame, not only into the debug pane: this is the one
-              // fault a pilot hits before anything else works, and `simulator
-              // disconnected` on its own does not say the sim is not running.
               status.setFault(
                 'simulator',
                 `${describeError(error)} ${simulatorHint()}`,
@@ -395,10 +388,6 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // Section 3 of the dashboard. Both services state a version without being
-  // asked for a token, so this keeps working when the session or the client
-  // token is the thing that is broken — which is exactly when knowing what is
-  // deployed on the other end is worth something.
   supervisor.start({
     name: 'versions',
     run: async (signal) => {
@@ -409,8 +398,6 @@ async function bootstrap(): Promise<void> {
           releases.latest().then(
             (latest) => status.setLatestRelease(latest),
             (error: unknown) => {
-              // Only the update hint depends on this, and GitHub being
-              // unreachable is not something a pilot mid-flight needs told.
               logger.debug(
                 `could not read the latest release: ${describeError(error)}`,
               );
@@ -418,6 +405,16 @@ async function bootstrap(): Promise<void> {
           ),
         ]);
         await sleep(config.versionPollIntervalMs);
+      }
+    },
+  });
+
+  supervisor.start({
+    name: 'tray',
+    run: async (signal) => {
+      while (!signal.aborted) {
+        paintTray();
+        await sleep(1_000);
       }
     },
   });
@@ -433,14 +430,43 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-// What to do about it, which is the half of an error message a pilot can act
-// on. Which half depends on where the simulator is meant to be: over the LAN it
-// is a firewall and a SimConnect.xml, locally it is just whether MSFS is up.
 function simulatorHint(): string {
   return process.env.SIMCONNECT_HOST === undefined ||
     process.env.SIMCONNECT_HOST.trim() === ''
     ? '(start MSFS and load a flight; retrying)'
     : `(check MSFS is running on ${process.env.SIMCONNECT_HOST.trim()}, its SimConnect.xml has an IPv4 block, and the port is open; retrying)`;
+}
+
+async function trayCheck(): Promise<void> {
+  const failures: string[] = [];
+  const tray = await openWindowsTray({
+    info: (message) => process.stdout.write(`${message}\n`),
+    warn: (message) => {
+      failures.push(message);
+      process.stdout.write(`${message}\n`);
+    },
+  });
+
+  if (tray instanceof NoTray) {
+    process.stderr.write(
+      `tray check failed: no tray was opened${failures.length > 0 ? `: ${failures.join('; ')}` : ''}\n`,
+    );
+    process.exit(1);
+  }
+
+  for (const colour of ['transmitting', 'standby', 'fault'] as const) {
+    tray.show(colour, `tray check: ${colour}`);
+  }
+
+  tray.hide();
+
+  if (failures.length > 0) {
+    process.stderr.write(`tray check failed: ${failures.join('; ')}\n`);
+    process.exit(1);
+  }
+
+  process.stdout.write('tray check passed: icon added, changed and removed\n');
+  process.exit(0);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -451,10 +477,9 @@ const version = (): string => process.env.APP_VERSION ?? 'dev';
 
 if (process.argv.includes('--version')) {
   process.stdout.write(`${version()}\n`);
+} else if (process.argv.includes('--tray-check')) {
+  void trayCheck();
 } else if (process.argv.includes('--print-frame')) {
-  // Draws one dashboard frame and exits. CI uses it to prove the box drawing
-  // and colour survive into the compiled executable, and it doubles as the
-  // way to see on a real console whether the code page is behaving.
   void useUtf8Console(process.platform).then(() => {
     process.stdout.write(`${previewFrame(version())}\n`);
   });

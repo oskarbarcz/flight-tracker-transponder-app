@@ -21,8 +21,6 @@ function frame(
   });
 }
 
-// Reading assertions against a coloured frame means reading them against the
-// escapes too, so the plain text is what most of these look at.
 function plain(
   columns: number,
   mutate?: (status: StatusRegistry) => void,
@@ -61,9 +59,6 @@ describe('renderFrame', () => {
     }
   });
 
-  // The assertion above used to read `line.length`, which colour quietly
-  // broke: an escape adds characters and no columns, so a .length budget
-  // gets easier to satisfy the more styling you add.
   it('fills the width in visible columns rather than characters', () => {
     for (const line of frame(80).filter((line) => line !== '')) {
       expect(visibleWidth(line)).toBe(80);
@@ -87,7 +82,7 @@ describe('renderFrame', () => {
   it('shows the wordmark and the version', () => {
     const lines = frame(80);
 
-    expect(lines[1]).toContain('FLIGHT TRACKER');
+    expect(lines[1]).toContain('MYPREFLIGHT');
     expect(lines[1]).toContain('v0.3.0');
   });
 
@@ -152,8 +147,6 @@ describe('renderFrame', () => {
     expect(lines).toContain('airframe: [B77W] * tail: [SP-LVD]');
   });
 
-  // Half of an eighty-column terminal cannot hold the names, and a name cut off
-  // mid-word identifies an airport less well than its code alone.
   it('drops the airport names before it lets the route be truncated', () => {
     const lines = plain(80, onService);
 
@@ -167,20 +160,22 @@ describe('renderFrame', () => {
 
   it('reports the transponder as an aircraft would', () => {
     const lines = plain(80, (status) => {
+      status.setCallsign('LH455');
       status.setAircraftIdentifier('SP-LVD');
       status.setTransponder('2000', 451.4);
       status.recordAcceptedReport(new Date(Date.UTC(2026, 7, 14, 11, 30, 30)));
     });
 
-    expect(lines).toContain('tail:   [SP-LVD]');
-    expect(lines).toContain('squawk: [2000]');
-    expect(lines).toContain('spd:    451kt');
-    expect(lines).toContain('call:   11:30:30z');
+    expect(lines).toContain('callsign: [LH455]');
+    expect(lines).toContain('tail:     [SP-LVD]');
+    expect(lines).toContain('squawk:   [2000]');
+    expect(lines).toContain('spd:      451kt');
+    expect(lines).toContain('call:     11:30:30z');
   });
 
   it.each([
-    [true, 'mode:   [MODE C]'],
-    [false, 'mode:   [STBY]'],
+    [true, 'mode:     [MODE C]'],
+    [false, 'mode:     [STBY]'],
   ])('reads mode from the switch, not the network (%s)', (on, expected) => {
     expect(plain(80, (status) => status.setTransmitting(on))).toContain(
       expected,
@@ -190,8 +185,9 @@ describe('renderFrame', () => {
   it('leaves the transponder rows blank until the simulator says otherwise', () => {
     const lines = plain(80);
 
-    expect(lines).toContain('squawk: [—]');
-    expect(lines).toContain('call:   —');
+    expect(lines).toContain('callsign: [—]');
+    expect(lines).toContain('squawk:   [—]');
+    expect(lines).toContain('call:     —');
   });
 
   it('reports the Discord client and whether presence is published', () => {
@@ -218,8 +214,6 @@ describe('renderFrame', () => {
     );
   });
 
-  // `standby` and `waiting-for-flight` are this app's states, not the service's:
-  // the service answered, so from here it is up.
   it.each([
     ['waiting-for-flight', 'adsb: [OK]'],
     ['standby', 'adsb: [OK]'],
@@ -263,8 +257,6 @@ describe('renderFrame', () => {
     expect(lines).not.toContain('line-0 ');
   });
 
-  // The key used to be the same colour as its label, which made the bottom line
-  // read as a sentence rather than as a list of things to press.
   it('brackets every key so it can be told from its label', () => {
     const lines = plain(80);
 
@@ -277,8 +269,8 @@ describe('renderFrame', () => {
   it('marks the key brighter than the words around it', () => {
     const line = frame(80).at(-1) ?? '';
 
-    // The letter carries its own style; the label is dim.
-    expect(line).toContain('[[1ms[0m]');
+    expect(line).toContain('[96ms[0m');
+    expect(line).toContain('[2m[[0m');
   });
 
   it('offers signing out once there is a session to end', () => {
@@ -296,13 +288,11 @@ describe('renderFrame', () => {
     expect(plain(80)).not.toContain('quit');
   });
 
-  // The simulator row vanished in the redesign, which left a pilot whose sim
-  // would not connect with nothing on screen at all.
   it('reports the simulator link, which everything else here depends on', () => {
-    expect(plain(80)).toContain('sim:    ○ disconnected');
+    expect(plain(80)).toContain('sim:      ○ disconnected');
     expect(
       plain(80, (status) => status.set('simulator', 'connected')),
-    ).toContain('sim:    ● connected');
+    ).toContain('sim:      ● connected');
   });
 
   it('says why a connection is unhappy, not only that it is', () => {
@@ -317,7 +307,6 @@ describe('renderFrame', () => {
     expect(plain(80)).not.toContain('!');
   });
 
-  // Truncating a fault cuts off the half that says what to do about it.
   it('wraps a long fault to the gutter rather than cutting it off', () => {
     const rows = plain(80, (status) => {
       status.setFault(
@@ -331,7 +320,6 @@ describe('renderFrame', () => {
 
     expect(rows[first]).toContain('connect ECONNREFUSED');
     expect(rows.slice(first, first + 3).join('\n')).toContain('the port is');
-    // Continuation lines line up under the message, not under the marker.
     expect(rows[first + 1]).toMatch(/^ {16}\S/);
   });
 
@@ -347,8 +335,6 @@ describe('renderFrame', () => {
     expect(rows.slice(first, first + 3).join('')).toContain('…');
   });
 
-  // Most actionable first: a pilot can start the simulator, and cannot do much
-  // about the ADS-B service being down.
   it('leads with the fault the pilot can act on', () => {
     const lines = plain(80, (status) => {
       status.setFault('adsb', 'adsb is unhappy');
@@ -385,7 +371,7 @@ function title(
 
 describe('renderTitle', () => {
   it('leads with whatever is broken', () => {
-    expect(title()).toBe('simulator disconnected · Flight Tracker');
+    expect(title()).toBe('simulator disconnected · MyPreflight');
   });
 
   it('names a connection that turned us away', () => {
@@ -394,7 +380,7 @@ describe('renderTitle', () => {
         healthy(status);
         status.set('adsb', 'unauthorised');
       }),
-    ).toBe('adsb unauthorised · Flight Tracker');
+    ).toBe('adsb unauthorised · MyPreflight');
   });
 
   it('leaves discord off the title however badly it is doing', () => {
@@ -407,11 +393,9 @@ describe('renderTitle', () => {
   });
 
   it('treats waiting for a flight as quiet rather than broken', () => {
-    expect(title(healthy)).toBe('no flight · Flight Tracker');
+    expect(title(healthy)).toBe('no flight · MyPreflight');
   });
 
-  // The switch is the pilot's, but forgetting it is how a flight ends up with
-  // no track at all, so the tab says so from behind the simulator.
   it('says so from the tab when transmission is switched off', () => {
     expect(
       title((status) => {
@@ -419,7 +403,7 @@ describe('renderTitle', () => {
         status.setCallsign('SP-LOT');
         status.setTransmitting(false);
       }),
-    ).toBe('standby · Flight Tracker');
+    ).toBe('standby · MyPreflight');
   });
 
   it('shows the callsign and how much it has sent once flying', () => {
@@ -431,6 +415,6 @@ describe('renderTitle', () => {
         status.recordAcceptedReport(new Date());
         status.recordAcceptedReport(new Date());
       }),
-    ).toBe('SP-LOT · 2 sent · Flight Tracker');
+    ).toBe('SP-LOT · 2 sent · MyPreflight');
   });
 });

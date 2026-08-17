@@ -57,8 +57,6 @@ export class PositionFeed {
     );
   }
 
-  // The pilot's switch. Nothing else touches it, so a flight that never asks
-  // keeps the behaviour it always had: transmit whenever there is a callsign.
   setTransmitting(transmitting: boolean): void {
     if (transmitting === this.transmitting) {
       return;
@@ -69,8 +67,6 @@ export class PositionFeed {
     this.policy.reset();
 
     if (!transmitting) {
-      // What was queued belongs to the minute before the switch. Publishing it
-      // on the way back would draw a track through a gap the pilot asked for.
       this.queue.clear();
     }
 
@@ -87,9 +83,6 @@ export class PositionFeed {
   }
 
   accept(sample: SimSample): void {
-    // Read off every sample, before any of the gates below: section 3 reports
-    // what the aircraft's transponder is set to, which is true whether or not
-    // this app is publishing it anywhere.
     this.status.setTransponder(
       decodeSquawk(sample.transponderCodeBcd) ?? null,
       Number.isFinite(sample.groundSpeed) ? sample.groundSpeed : null,
@@ -200,8 +193,6 @@ export class PositionFeed {
       }
 
       if (error instanceof AdsbReportRejectedError) {
-        // The frame carries the reason too: a report the service will never
-        // accept is dropped silently otherwise, and `sent 0` is all a pilot sees.
         this.status.setFault('adsb', error.message);
         this.noteRejection(error.message);
 
@@ -222,10 +213,6 @@ export class PositionFeed {
     }
   }
 
-  // A report the service refuses is refused once a second for as long as the
-  // simulator keeps sampling, so the reason is worth saying loudly and then
-  // saying quietly: the first line names the field, the rest stay in the file
-  // at debug rather than burying every other line in the pane.
   private noteRejection(message: string): void {
     if (message === this.lastRejection) {
       this.logger.debug(message);
