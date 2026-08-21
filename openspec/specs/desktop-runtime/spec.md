@@ -26,6 +26,12 @@ rather than only written to the log file, and the password SHALL NOT be echoed.
 - **THEN** the app names the key that asks again, and pressing it prompts for the credentials
   without the pilot restarting anything
 
+#### Scenario: The password was mistyped
+
+- **WHEN** the credentials are refused at the console prompt
+- **THEN** the pilot is asked again a small, bounded number of times before the app gives up and
+  hands over to the dashboard, rather than looping on the prompt forever
+
 #### Scenario: Signing in while the app is already running
 
 - **WHEN** the pilot signs in from the dashboard
@@ -190,6 +196,12 @@ else. Versions SHALL be re-read rarely, since neither changes except on a deploy
 
 - **WHEN** a version cannot be read
 - **THEN** the row shows the state without a version, and both feeds carry on unaffected
+
+#### Scenario: A service has no status route
+
+- **WHEN** a service answers nothing useful at its root
+- **THEN** the version is read from the service's own API document instead, rather than being
+  reported as absent
 
 #### Scenario: A newer build has been released
 

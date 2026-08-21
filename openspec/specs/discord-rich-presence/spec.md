@@ -5,6 +5,35 @@ Mirror the activity that `flight-tracker-api` publishes for the signed-in pilot 
 Discord client running on the same machine, since no server-side API can write a user's
 activity.
 ## Requirements
+### Requirement: The socket is spoken to directly, and the framing is not assumed to be tidy
+
+The system SHALL speak Discord's local protocol itself — the length-prefixed frames, the
+handshake and the activity command — rather than depending on a third-party RPC library, whose
+transitive weight was measured at more than the app's entire runtime for the four calls it
+needed. The payload SHALL keep the exact shape the Discord client expects, field for field, so
+that owning the protocol is never also a change to what Discord displays.
+
+Reading SHALL tolerate a frame arriving split across several reads, or several frames arriving
+in one. A connection attempt that fails SHALL close the socket it opened rather than abandoning
+it.
+
+#### Scenario: A frame arrives in pieces
+
+- **WHEN** the client delivers a response one byte at a time, or two responses at once
+- **THEN** each frame is reassembled and handled exactly once
+
+#### Scenario: The handshake is refused
+
+- **WHEN** a connection attempt fails part-way
+- **THEN** the socket is torn down, and the retry starts from a clean one rather than leaking a
+  handle per attempt
+
+#### Scenario: The wire shape is changed by accident
+
+- **WHEN** the activity payload is built
+- **THEN** it carries the same fields, in the same form, that the Discord client accepted before
+  the protocol was taken in-house
+
 ### Requirement: The activity is written over the local Discord connection
 
 The system SHALL write the activity to the Discord client through its local inter-process
