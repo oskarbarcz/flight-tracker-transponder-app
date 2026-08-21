@@ -91,6 +91,7 @@ function handlers(
     onSignIn: () => undefined,
     onSignOut: () => undefined,
     onTransmit: () => undefined,
+    onUpdate: () => undefined,
     ...overrides,
   };
 }
@@ -126,6 +127,65 @@ describe('Dashboard', () => {
     view.stop();
 
     expect(quit).toBe(1);
+  });
+
+  it('downloads the update when u is pressed and a newer release exists', () => {
+    const { input, status, view } = dashboard();
+    let asked = 0;
+
+    status.setLatestRelease('0.9.0');
+    view.start(
+      handlers({
+        onUpdate: () => {
+          asked += 1;
+        },
+      }),
+    );
+    input.press('u');
+    view.stop();
+
+    expect(asked).toBe(1);
+  });
+
+  it('ignores u when this is already the newest build', () => {
+    const { input, status, view } = dashboard();
+    let asked = 0;
+
+    status.setLatestRelease('0.3.0');
+    view.start(
+      handlers({
+        onUpdate: () => {
+          asked += 1;
+        },
+      }),
+    );
+    input.press('u');
+    view.stop();
+
+    expect(asked).toBe(0);
+  });
+
+  it('ignores u while the download is already running', () => {
+    const { input, status, view } = dashboard();
+    let asked = 0;
+
+    status.setLatestRelease('0.9.0');
+    status.setUpdate({
+      phase: 'downloading',
+      receivedBytes: 1024,
+      totalBytes: 4096,
+    });
+    view.start(
+      handlers({
+        onUpdate: () => {
+          asked += 1;
+        },
+      }),
+    );
+    input.press('u');
+    view.stop();
+
+    expect(asked).toBe(0);
   });
 
   it('asks for a callsign when c is pressed', () => {

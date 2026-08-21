@@ -14,6 +14,7 @@ export function previewFrame(version: string): string {
 
   status.setServiceVersion('api', '3.24.0');
   status.setServiceVersion('adsb', null);
+  status.setLatestRelease('99.0.0');
 
   status.setCrew({ name: 'Oskar Barcz', email: 'pilot@example.com' });
   status.setService({

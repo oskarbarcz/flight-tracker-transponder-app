@@ -31,7 +31,7 @@ export const streamSink: LogSink = (line) => {
 export class Logger {
   constructor(
     private readonly level: LogLevel,
-    private readonly filePath: string,
+    private readonly filePath: string | null,
     private readonly scope = 'app',
     private readonly sink: LogSink = streamSink,
   ) {}
@@ -68,6 +68,10 @@ export class Logger {
   }
 
   private appendToFile(line: string): void {
+    if (this.filePath === null) {
+      return;
+    }
+
     try {
       this.rotateIfNeeded();
       appendFileSync(this.filePath, `${line}\n`, { encoding: 'utf-8' });
@@ -77,6 +81,10 @@ export class Logger {
   }
 
   private rotateIfNeeded(): void {
+    if (this.filePath === null) {
+      return;
+    }
+
     try {
       if (statSync(this.filePath).size < MAX_LOG_BYTES) {
         return;
