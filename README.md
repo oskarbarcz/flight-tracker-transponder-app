@@ -56,6 +56,46 @@ No installer, nothing to configure.
 4. Start the app by double-click. Enter your MyPreflight credentials.
 5. Your flight is going to be tracked automatically!
 
+### Portable, and it stays that way
+
+Everything the app writes lives in the folder the executable sits in, whichever
+directory you happen to launch it from:
+
+| File                            | What it holds                                          |
+|---------------------------------|--------------------------------------------------------|
+| `session.secret`                | your refresh token, encrypted with Windows DPAPI       |
+| `mypreflight-transponder.log`   | the rolling log, capped at 5 MB plus one rotation      |
+| `.env`                          | optional overrides, only if you write one              |
+
+Nothing goes to `%APPDATA%`, nothing goes into the registry, no service is
+registered and no shortcut is created. Deleting the folder uninstalls the app.
+Carry the folder on a stick if you like; the session is the one thing that does
+not travel, because DPAPI ties it to the Windows account that signed in, so the
+app simply asks for the password again on a different machine.
+
+If the folder cannot be written to — `C:\Program Files`, a read-only stick, a
+locked share — the app says so on the dashboard and runs anyway, without a log
+and without remembering the session. Move it somewhere you own, or point
+`DATA_DIR` at a folder you can write to.
+
+### Updates
+
+The app asks GitHub for the newest release every 15 minutes and tells you when
+it finds one:
+
+```
+  ^ update — v0.12.0 is out — press [u] to save it to your Downloads folder
+```
+
+Press `u` and it downloads that release into your Downloads folder as
+`mypreflight-transponder-0.12.0.exe`, next to whatever is already there rather
+than over it, and checks the download against the checksum GitHub publishes
+before keeping it. Then quit the app and swap the executable for the new one —
+it never replaces itself while running, and never restarts on its own.
+
+For an unattended machine, `mypreflight-transponder.exe --download-update` does
+the same thing and exits: nothing to download, or the path it wrote.
+
 ## Usage
 
 Start a flight in the platform first. The callsign comes from that flight, so
@@ -88,7 +128,13 @@ npm run lint       # biome
 npm run typecheck
 npm start          # needs the environment in .env.example
 npm run build:exe  # single Windows executable, needs bun
+
+npx ts-node src/main.ts --print-frame   # the dashboard, drawn without a simulator
 ```
+
+Under `ts-node` the app has no executable to sit beside, so it keeps its state
+in the working directory. `DATA_DIR` overrides that in either case, and expands
+`%WINDOWS_STYLE%` variables.
 
 ## Contact
 

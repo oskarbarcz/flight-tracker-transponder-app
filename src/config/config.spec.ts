@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { BUILT_IN, loadConfig } from './config';
 
 const minimal = {
@@ -82,6 +83,28 @@ describe('loadConfig', () => {
     });
 
     expect(config.simConnectRemote?.port).toBe(5001);
+  });
+
+  it('keeps the log beside the app rather than in the working directory', () => {
+    expect(loadConfig(minimal, '/opt/app').logFilePath).toBe(
+      join('/opt/app', 'mypreflight-transponder.log'),
+    );
+  });
+
+  it('resolves a relative log path against the same folder', () => {
+    expect(
+      loadConfig({ ...minimal, LOG_FILE_PATH: 'logs/app.log' }, '/opt/app')
+        .logFilePath,
+    ).toBe(join('/opt/app', 'logs', 'app.log'));
+  });
+
+  it('leaves an absolute log path alone', () => {
+    const absolute = join('/var', 'log', 'transponder.log');
+
+    expect(
+      loadConfig({ ...minimal, LOG_FILE_PATH: absolute }, '/opt/app')
+        .logFilePath,
+    ).toBe(absolute);
   });
 
   it('falls back to a sane value for an unusable interval', () => {

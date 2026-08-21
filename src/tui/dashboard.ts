@@ -1,3 +1,4 @@
+import { isUpdateAvailable } from '../api/release.client';
 import type { StatusRegistry } from '../core/status';
 import type { PromptInput } from '../platform/prompt';
 import { type FramePrompt, renderFrame, renderTitle } from './frame';
@@ -9,6 +10,7 @@ const DEBUG_KEY = 'd';
 const CALLSIGN_KEY = 'c';
 const SESSION_KEY = 's';
 const TRANSMIT_KEY = 't';
+const UPDATE_KEY = 'u';
 const CANCEL = '\u0003';
 const ESCAPE = '\u001b';
 const ENTER = ['\r', '\n'];
@@ -24,6 +26,7 @@ export type DashboardHandlers = {
   onSignIn: (email: string, password: string) => void;
   onSignOut: () => void;
   onTransmit: () => void;
+  onUpdate: () => void;
 };
 
 const IGNORE: DashboardHandlers = {
@@ -32,6 +35,7 @@ const IGNORE: DashboardHandlers = {
   onSignIn: () => undefined,
   onSignOut: () => undefined,
   onTransmit: () => undefined,
+  onUpdate: () => undefined,
 };
 
 type Field = {
@@ -243,7 +247,27 @@ export class Dashboard {
     if (key === TRANSMIT_KEY) {
       this.handlers.onTransmit();
       this.render();
+
+      return;
     }
+
+    if (key === UPDATE_KEY) {
+      this.update();
+    }
+  }
+
+  private update(): void {
+    const status = this.status.snapshot();
+
+    if (
+      !isUpdateAvailable(this.version, status.latestRelease) ||
+      status.update.phase === 'downloading'
+    ) {
+      return;
+    }
+
+    this.handlers.onUpdate();
+    this.render();
   }
 
   private edit(character: string): void {

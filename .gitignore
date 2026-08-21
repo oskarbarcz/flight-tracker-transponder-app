@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.log
+session.json
+*.secret
 .idea/
 .DS_Store
 .env

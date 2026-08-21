@@ -20,6 +20,12 @@ export type ServiceAirport = {
   name: string | null;
 };
 
+export type UpdateStatus =
+  | { phase: 'idle' }
+  | { phase: 'downloading'; receivedBytes: number; totalBytes: number | null }
+  | { phase: 'saved'; path: string }
+  | { phase: 'failed'; reason: string };
+
 export type CurrentService = {
   callsign: string;
   departure: ServiceAirport | null;
@@ -33,6 +39,8 @@ export type StatusSnapshot = {
   faults: Record<ConnectionName, string | null>;
   serviceVersions: Record<ServiceName, string | null>;
   latestRelease: string | null;
+  update: UpdateStatus;
+  storageFault: string | null;
   crew: Crew | null;
   service: CurrentService | null;
   callsign: string | null;
@@ -71,6 +79,8 @@ export class StatusRegistry {
   private readonly faults = new Map<ConnectionName, string>();
 
   private latestRelease: string | null = null;
+  private update: UpdateStatus = { phase: 'idle' };
+  private storageFault: string | null = null;
   private crew: Crew | null = null;
   private service: CurrentService | null = null;
   private callsign: string | null = null;
@@ -104,6 +114,14 @@ export class StatusRegistry {
 
   setLatestRelease(version: string | null): void {
     this.latestRelease = version;
+  }
+
+  setUpdate(update: UpdateStatus): void {
+    this.update = update;
+  }
+
+  setStorageFault(message: string | null): void {
+    this.storageFault = message;
   }
 
   setCrew(crew: Crew | null): void {
@@ -159,6 +177,8 @@ export class StatusRegistry {
         string | null
       >,
       latestRelease: this.latestRelease,
+      update: this.update,
+      storageFault: this.storageFault,
       crew: this.crew,
       service: this.service,
       callsign: this.callsign,

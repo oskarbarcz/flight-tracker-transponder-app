@@ -227,7 +227,21 @@ describe('renderFrame', () => {
 
   it('offers the update when a newer release exists', () => {
     expect(plain(80, (status) => status.setLatestRelease('0.8.0'))).toContain(
-      'xpndr: [UPDATE to v0.8.0 possible]',
+      'xpndr: [UPDATE v0.8.0]',
+    );
+  });
+
+  it('keeps the status line inside the box when every version is known', () => {
+    const lines = plain(80, (status) => {
+      status.set('adsb', 'connected');
+      status.set('api', 'connected');
+      status.setServiceVersion('adsb', '1.24.0');
+      status.setServiceVersion('api', '3.24.0');
+      status.setLatestRelease('0.12.0');
+    });
+
+    expect(lines).toContain(
+      'adsb: [OK, v1.24.0] · tracker: [OK, v3.24.0] · xpndr: [UPDATE v0.12.0]',
     );
   });
 
@@ -236,6 +250,84 @@ describe('renderFrame', () => {
 
     expect(lines).toContain('xpndr: [OK, v0.3.0]');
     expect(lines).not.toContain('UPDATE');
+  });
+
+  it('asks the pilot to download a newer release, and says where it lands', () => {
+    const lines = plain(80, (status) => status.setLatestRelease('0.8.0'));
+
+    expect(lines).toContain(
+      'update — v0.8.0 is out — press [u] to save it to your Downloads folder',
+    );
+  });
+
+  it('says nothing about downloading when this is the newest build', () => {
+    const lines = plain(80, (status) => status.setLatestRelease('0.3.0'));
+
+    expect(lines).not.toContain('Downloads folder');
+    expect(lines).not.toContain('press [u]');
+  });
+
+  it('follows the download while it runs', () => {
+    const lines = plain(80, (status) => {
+      status.setLatestRelease('0.8.0');
+      status.setUpdate({
+        phase: 'downloading',
+        receivedBytes: 12 * 1_048_576,
+        totalBytes: 48 * 1_048_576,
+      });
+    });
+
+    expect(lines).toContain('xpndr: [DOWNLOADING 25%]');
+    expect(lines).toContain('downloading v0.8.0 — 25% of 48.0MB');
+  });
+
+  it('stops offering the download once it is running', () => {
+    const lines = plain(80, (status) => {
+      status.setLatestRelease('0.8.0');
+      status.setUpdate({
+        phase: 'downloading',
+        receivedBytes: 1024,
+        totalBytes: null,
+      });
+    });
+
+    expect(lines).not.toContain('press [u]');
+    expect(lines).toContain('downloading v0.8.0 — 0.0MB of 0.0MB');
+  });
+
+  it('says where the download went, and what to do with it', () => {
+    const lines = plain(80, (status) => {
+      status.setLatestRelease('0.8.0');
+      status.setUpdate({
+        phase: 'saved',
+        path: 'C:\\Users\\pilot\\Downloads\\mypreflight-transponder-0.8.0.exe',
+      });
+    });
+
+    expect(lines).toContain('xpndr: [UPDATE SAVED]');
+    expect(lines).toContain('mypreflight-transponder-0.8.0.exe');
+    expect(lines).toContain('swap the executable for it');
+  });
+
+  it('offers another go when the download failed', () => {
+    const lines = plain(80, (status) => {
+      status.setLatestRelease('0.8.0');
+      status.setUpdate({ phase: 'failed', reason: 'the connection dropped' });
+    });
+
+    expect(lines).toContain('the connection dropped — press [u] to try again');
+    expect(lines).toContain('xpndr: [UPDATE v0.8.0]');
+  });
+
+  it('says so when the folder it runs from takes no writes', () => {
+    const lines = plain(80, (status) =>
+      status.setStorageFault(
+        'cannot write to C:\\Program Files\\MyPreflight: the session and the log are off',
+      ),
+    );
+
+    expect(lines).toContain('storage — cannot write to');
+    expect(lines).toContain('MyPreflight: the session and');
   });
 
   it('hides the log pane until it is asked for', () => {

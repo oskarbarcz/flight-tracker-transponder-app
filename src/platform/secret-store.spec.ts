@@ -61,6 +61,19 @@ describe('DpapiSecretStore', () => {
     expect(calls[0]?.args.join(' ')).toContain('C:\\data\\session.secret');
   });
 
+  it('survives a folder name with an apostrophe in it', async () => {
+    const { run, calls } = recorder({ stdout: '', status: 'ok' });
+
+    await new DpapiSecretStore("D:\\Ola's stick", run).write(
+      'session',
+      'refresh-1',
+    );
+
+    expect(calls[0]?.args.join(' ')).toContain(
+      "'D:\\Ola''s stick\\session.secret'",
+    );
+  });
+
   it('reads the encrypted blob back', async () => {
     const { run } = recorder({ stdout: 'refresh-1', status: 'ok' });
 

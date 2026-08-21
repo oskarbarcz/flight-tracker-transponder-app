@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { loadConfig } from './config/config';
 import { envFilePaths, loadEnvFiles } from './config/env-file';
 import { type LogSink, Logger, streamSink } from './core/logger';
@@ -7,11 +8,23 @@ import { useUtf8Console } from './platform/console-encoding';
 import { Screen } from './tui/screen';
 import { type ServiceName, StatusRegistry } from './core/status';
 import { describeError, Supervisor } from './core/supervisor';
-import { FileTokenStore, SecretTokenStore } from './api/token-store';
+import {
+  FileTokenStore,
+  InMemoryTokenStore,
+  SecretTokenStore,
+  type TokenStore,
+} from './api/token-store';
 import { ConsolePrompt } from './platform/prompt';
+import { appDirectory, resolveStorage, type Storage } from './platform/paths';
 import { secretStoreFor } from './platform/secret-store';
+import { Downloader } from './update/downloader';
+import { Updater } from './update/updater';
 import { promptForSignIn } from './api/sign-in';
-import { ReleaseClient } from './api/release.client';
+import {
+  isUpdateAvailable,
+  type Release,
+  ReleaseClient,
+} from './api/release.client';
 import {
   FlightTrackerClient,
   NotSignedInError,
@@ -33,17 +46,28 @@ const SESSION_FILE = 'session.json';
 async function bootstrap(): Promise<void> {
   loadEnvFiles(envFilePaths());
 
-  const config = loadConfig();
+  const storage = resolveStorage(appDirectory(), process.env.DATA_DIR);
+  const config = loadConfig(process.env, storage.directory);
   const status = new StatusRegistry();
 
   let logSink: LogSink = streamSink;
   const logger = new Logger(
     config.logLevel,
-    config.logFilePath,
+    storage.writable ? config.logFilePath : null,
     'app',
     (line) => logSink(line),
   );
   const supervisor = new Supervisor(logger);
+
+  if (!storage.writable) {
+    const complaint =
+      `cannot write to ${storage.directory}, so the session and the log are off ` +
+      'for this run and nothing is stored anywhere else: move the app to a ' +
+      'folder you own, or point DATA_DIR at one';
+
+    status.setStorageFault(complaint);
+    logger.warn(complaint);
+  }
 
   if (
     process.platform === 'win32' &&
@@ -54,17 +78,17 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  const secrets = secretStoreFor(process.platform, process.cwd());
-  const tokenStore =
-    secrets === null
-      ? new FileTokenStore(SESSION_FILE)
-      : new SecretTokenStore(secrets);
+  const tokenStore = tokenStoreFor(storage);
 
   const api = new FlightTrackerClient(config.apiBaseUrl, tokenStore);
 
   const adsbToken = process.env.ADSB_CLIENT_TOKEN ?? '';
   const adsb = new AdsbClient(config.adsbBaseUrl, adsbToken);
   const releases = new ReleaseClient();
+  const updater = new Updater(new Downloader(), status, logger.child('update'));
+
+  let latestRelease: Release | null = null;
+  let announcedRelease: string | null = null;
 
   const presenceWriter = new IpcPresenceWriter(
     config.discordApplicationId,
@@ -266,6 +290,33 @@ async function bootstrap(): Promise<void> {
     positionFeed.setTransmitting(!positionFeed.isTransmitting);
   };
 
+  const announceRelease = (release: Release): void => {
+    if (
+      !isUpdateAvailable(version(), release.version) ||
+      announcedRelease === release.version
+    ) {
+      return;
+    }
+
+    announcedRelease = release.version;
+    logger.info(
+      dashboard === null
+        ? `v${release.version} is out: run --download-update to save it to your Downloads folder`
+        : `v${release.version} is out: press u to save it to your Downloads folder`,
+    );
+  };
+
+  const downloadRelease = (): void => {
+    if (latestRelease === null) {
+      logger.warn('no release has been read from GitHub yet');
+      dashboard?.revealLogs();
+
+      return;
+    }
+
+    void updater.download(latestRelease);
+  };
+
   const tray: Tray = await openWindowsTray(logger.child('tray'));
 
   const paintTray = (): void => {
@@ -306,6 +357,7 @@ async function bootstrap(): Promise<void> {
       onSignIn: signIn,
       onSignOut: signOut,
       onTransmit: toggleTransmitting,
+      onUpdate: downloadRelease,
     });
     process.stdout.on('resize', () => dashboard.resize());
   }
@@ -396,7 +448,11 @@ async function bootstrap(): Promise<void> {
           readVersion('api', () => api.version()),
           readVersion('adsb', () => adsb.version()),
           releases.latest().then(
-            (latest) => status.setLatestRelease(latest),
+            (release) => {
+              latestRelease = release;
+              status.setLatestRelease(release.version);
+              announceRelease(release);
+            },
             (error: unknown) => {
               logger.debug(
                 `could not read the latest release: ${describeError(error)}`,
@@ -428,6 +484,41 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+}
+
+function tokenStoreFor(storage: Storage): TokenStore {
+  if (!storage.writable) {
+    return new InMemoryTokenStore();
+  }
+
+  const secrets = secretStoreFor(process.platform, storage.directory);
+
+  return secrets === null
+    ? new FileTokenStore(join(storage.directory, SESSION_FILE))
+    : new SecretTokenStore(secrets);
+}
+
+async function fetchRelease(): Promise<void> {
+  const status = new StatusRegistry();
+  const logger = new Logger('info', null, 'update');
+  const updater = new Updater(new Downloader(), status, logger);
+  let release: Release;
+
+  try {
+    release = await new ReleaseClient().latest();
+  } catch (error) {
+    process.stderr.write(
+      `could not read the latest release: ${describeError(error)}\n`,
+    );
+    process.exit(1);
+  }
+
+  if (!isUpdateAvailable(version(), release.version)) {
+    process.stdout.write(`v${version()} is already the newest release\n`);
+    process.exit(0);
+  }
+
+  process.exit((await updater.download(release)) === null ? 1 : 0);
 }
 
 function simulatorHint(): string {
@@ -477,6 +568,8 @@ const version = (): string => process.env.APP_VERSION ?? 'dev';
 
 if (process.argv.includes('--version')) {
   process.stdout.write(`${version()}\n`);
+} else if (process.argv.includes('--download-update')) {
+  void fetchRelease();
 } else if (process.argv.includes('--tray-check')) {
   void trayCheck();
 } else if (process.argv.includes('--print-frame')) {

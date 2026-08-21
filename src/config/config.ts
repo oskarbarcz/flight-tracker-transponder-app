@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 export type SimConnectRemote = {
   host: string;
   port: number;
@@ -20,10 +22,12 @@ export type Config = {
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export const BUILT_IN = {
-  apiBaseUrl: 'https://api.flights.barcz.me',
-  adsbBaseUrl: 'https://adsb.barcz.me',
+  apiBaseUrl: 'https://api.mypreflight.io',
+  adsbBaseUrl: 'https://adsb.mypreflight.io',
   discordApplicationId: '1536756124894629970',
 };
+
+export const LOG_FILE_NAME = 'mypreflight-transponder.log';
 
 const DEFAULTS = {
   presencePollIntervalMs: 15_000,
@@ -34,7 +38,10 @@ const DEFAULTS = {
   logLevel: 'info' as LogLevel,
 };
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  directory: string = process.cwd(),
+): Config {
   return {
     apiBaseUrl: trimTrailingSlash(text(env.API_BASE_URL, BUILT_IN.apiBaseUrl)),
     adsbBaseUrl: trimTrailingSlash(
@@ -63,7 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ),
     queueCapacity: number(env.QUEUE_CAPACITY, DEFAULTS.queueCapacity),
     logLevel: logLevel(env.LOG_LEVEL),
-    logFilePath: env.LOG_FILE_PATH ?? 'mypreflight-transponder.log',
+    logFilePath: resolve(directory, text(env.LOG_FILE_PATH, LOG_FILE_NAME)),
   };
 }
 

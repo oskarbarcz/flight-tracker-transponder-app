@@ -57,7 +57,7 @@ export class DpapiSecretStore implements SecretStore {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `if (Test-Path '${this.pathFor(key)}') { $secure = Get-Content '${this.pathFor(key)}' | ConvertTo-SecureString; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)) }`,
+      `if (Test-Path ${quoted(this.pathFor(key))}) { $secure = Get-Content ${quoted(this.pathFor(key))} | ConvertTo-SecureString; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)) }`,
     ]);
 
     return result.status === 'ok' && result.stdout !== ''
@@ -70,7 +70,7 @@ export class DpapiSecretStore implements SecretStore {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `ConvertTo-SecureString '${value}' -AsPlainText -Force | ConvertFrom-SecureString | Set-Content '${this.pathFor(key)}'`,
+      `ConvertTo-SecureString ${quoted(value)} -AsPlainText -Force | ConvertFrom-SecureString | Set-Content ${quoted(this.pathFor(key))}`,
     ]);
   }
 
@@ -79,13 +79,17 @@ export class DpapiSecretStore implements SecretStore {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `Remove-Item '${this.pathFor(key)}' -ErrorAction SilentlyContinue`,
+      `Remove-Item ${quoted(this.pathFor(key))} -ErrorAction SilentlyContinue`,
     ]);
   }
 
   private pathFor(key: string): string {
     return `${this.directory}\\${key}.secret`;
   }
+}
+
+function quoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 export function secretStoreFor(

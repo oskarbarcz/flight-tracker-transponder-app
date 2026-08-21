@@ -78,7 +78,7 @@ export function renderFrame(input: FrameInput): string[] {
     ...pair(transponder(status), comms(status), width),
     ...serviceStatus(status, input.version)(width),
     '',
-    ...faultLines(status, width),
+    ...notices(status, input.version, width),
   ];
 
   if (input.showLogs) {
@@ -243,17 +243,39 @@ function serviceStatus(
   status: StatusSnapshot,
   version: string,
 ): (width: number) => string[] {
-  const update = isUpdateAvailable(version, status.latestRelease);
-
   return box('5 STATUS', [
     [
       `adsb: ${health(status.connections.adsb, status.serviceVersions.adsb)}`,
       `tracker: ${health(status.connections.api, status.serviceVersions.api)}`,
-      update
-        ? `xpndr: [${amber(`UPDATE to v${status.latestRelease} possible`)}]`
-        : `xpndr: [${green('OK')}, v${version}]`,
+      `xpndr: ${transponderHealth(status, version)}`,
     ].join(dim(' · ')),
   ]);
+}
+
+function transponderHealth(status: StatusSnapshot, version: string): string {
+  const { update } = status;
+
+  if (update.phase === 'downloading') {
+    return `[${amber(`DOWNLOADING ${share(update.receivedBytes, update.totalBytes)}`)}]`;
+  }
+
+  if (update.phase === 'saved') {
+    return `[${green('UPDATE SAVED')}]`;
+  }
+
+  return isUpdateAvailable(version, status.latestRelease)
+    ? `[${amber(`UPDATE v${status.latestRelease}`)}]`
+    : `[${green('OK')}, v${version}]`;
+}
+
+function share(receivedBytes: number, totalBytes: number | null): string {
+  return totalBytes === null || totalBytes === 0
+    ? megabytes(receivedBytes)
+    : `${Math.floor((receivedBytes / totalBytes) * 100)}%`;
+}
+
+function megabytes(bytes: number): string {
+  return `${(bytes / 1_048_576).toFixed(1)}MB`;
 }
 
 function health(state: ConnectionState, version: string | null): string {
@@ -360,27 +382,91 @@ function headingRule(head: string, inner: number): string {
 
 const FAULT_ORDER: ConnectionName[] = ['simulator', 'api', 'adsb', 'discord'];
 
-function faultLines(status: StatusSnapshot, width: number): string[] {
-  const name = FAULT_ORDER.find((each) => status.faults[each] !== null);
+const UPDATE_KEY = 'u';
 
-  if (name === undefined) {
-    return [];
+function notices(
+  status: StatusSnapshot,
+  version: string,
+  width: number,
+): string[] {
+  const blocks: string[][] = [];
+
+  if (status.storageFault !== null) {
+    blocks.push(
+      annotation(reverse(red('!')), 'storage', status.storageFault, width),
+    );
   }
 
-  const label = `${reverse(red('!'))} ${bold(name)} ${dim('—')} `;
+  const name = FAULT_ORDER.find((each) => status.faults[each] !== null);
+
+  if (name !== undefined) {
+    blocks.push(
+      annotation(reverse(red('!')), name, status.faults[name] ?? '', width),
+    );
+  }
+
+  const update = updateNotice(status, version);
+
+  if (update !== null) {
+    blocks.push(annotation(update.marker, 'update', update.text, width));
+  }
+
+  return blocks.flatMap((block) => [...block, '']);
+}
+
+function updateNotice(
+  status: StatusSnapshot,
+  version: string,
+): { marker: string; text: string } | null {
+  const { update, latestRelease } = status;
+
+  if (update.phase === 'downloading') {
+    return {
+      marker: amber('v'),
+      text:
+        `downloading v${latestRelease ?? '?'} — ` +
+        `${share(update.receivedBytes, update.totalBytes)} of ${megabytes(update.totalBytes ?? update.receivedBytes)}`,
+    };
+  }
+
+  if (update.phase === 'saved') {
+    return {
+      marker: green('*'),
+      text: `saved to ${update.path} — quit the app and swap the executable for it`,
+    };
+  }
+
+  if (update.phase === 'failed') {
+    return {
+      marker: amber('!'),
+      text: `${update.reason} — press [${UPDATE_KEY}] to try again`,
+    };
+  }
+
+  return isUpdateAvailable(version, latestRelease)
+    ? {
+        marker: amber('^'),
+        text: `v${latestRelease} is out — press [${UPDATE_KEY}] to save it to your Downloads folder`,
+      }
+    : null;
+}
+
+function annotation(
+  marker: string,
+  name: string,
+  message: string,
+  width: number,
+): string[] {
+  const label = `${marker} ${bold(name)} ${dim('—')} `;
   const gutter = visibleWidth(label);
   const room = Math.max(width - 4 - gutter, MIN_FAULT_ROOM);
-  const wrapped = wrap(status.faults[name] ?? '', room);
 
-  return [
-    ...wrapped.map((line, row) =>
-      indent(
-        row === 0 ? `${label}${line}` : `${' '.repeat(gutter)}${line}`,
-        width,
-      ),
+  return wrap(message, room).map((line, row) =>
+    indent(
+      row === 0 ? `${label}${line}` : `${' '.repeat(gutter)}${line}`,
+      width,
     ),
-    '',
-  ];
+  );
 }
 
 const MAX_FAULT_ROWS = 3;
