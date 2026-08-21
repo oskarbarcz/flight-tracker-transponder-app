@@ -201,31 +201,57 @@ else. Versions SHALL be re-read rarely, since neither changes except on a deploy
 - **WHEN** the running build has no release version
 - **THEN** no update is offered, whatever has been published
 
-### Requirement: The app starts with Windows and survives the sim it accompanies
+### Requirement: The app survives the sim it accompanies, and registers itself nowhere
 
-The system SHALL be installable to start with the signed-in Windows user without
-administrator rights, SHALL run with no window of its own, and SHALL keep running when the
-simulator, Discord, or the network go away. A crash in one feed SHALL NOT stop the other.
-
-#### Scenario: Autostart
-
-- **WHEN** the pilot enables start with Windows
-- **THEN** the app is running after the next sign-in to Windows, with no console window
+The system SHALL keep running when the simulator, Discord, or the network go away, and a crash
+in one feed SHALL NOT stop the other: each runs as an independently supervised loop that is
+restarted with a bounded, backing-off delay. The system SHALL NOT install itself to start with
+Windows, write a registry entry, or place a shortcut, because nothing outside the folder the
+pilot dropped it in is the app's to write. A pilot who wants it to start with Windows SHALL be
+able to do that with a shortcut of their own placing.
 
 #### Scenario: One feed fails
 
 - **WHEN** the position feed throws an unexpected error
 - **THEN** it is restarted by its supervisor and rich presence is unaffected
 
-### Requirement: Diagnostics are local, bounded and shareable
+#### Scenario: A dependency is absent for a long time
+
+- **WHEN** the simulator or the network is away for hours
+- **THEN** the retry interval grows to a ceiling rather than either giving up or hammering, and
+  the app is still there when the dependency returns
+
+#### Scenario: Uninstalling
+
+- **WHEN** the pilot deletes the folder
+- **THEN** nothing of the app remains on the machine, because nothing was registered
+
+### Requirement: Diagnostics are local, bounded and readable from the dashboard
 
 The system SHALL write a rolling local log of connection state, published report counts and
-failures, bounded in size, containing no credentials, and reachable from the tray so a pilot
-can attach it to a report.
+failures, bounded in size and rotated rather than grown without limit, with credentials redacted
+from every line it writes. The recent log SHALL be readable from the dashboard itself, on a key,
+and SHALL be hidden until asked for so a healthy flight is not narrated at the pilot. A message
+the pilot needs to act on SHALL NOT depend on that pane being open.
 
 #### Scenario: A pilot reports a problem
 
-- **WHEN** the pilot opens the log from the tray after a failed flight
-- **THEN** the log shows when each connection came and went and how many reports were
-  published, accepted and dropped
+- **WHEN** the pilot opens the log pane after a failed flight
+- **THEN** it shows when each connection came and went and how many reports were published and
+  dropped, and the log file carries the same history for attaching to a report
+
+#### Scenario: A credential passes through a message
+
+- **WHEN** a token, a password or an authorization header would appear in a log line
+- **THEN** it is redacted before the line is written or shown
+
+#### Scenario: The log outgrows its bound
+
+- **WHEN** the log file reaches its size limit
+- **THEN** it is rotated and the app keeps logging, rather than filling the pilot's disk
+
+#### Scenario: Something needs the pilot's attention
+
+- **WHEN** a sign-in fails, or an update is waiting
+- **THEN** it is put on the frame itself, not only into the log pane
 

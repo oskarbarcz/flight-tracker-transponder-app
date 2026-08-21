@@ -3,7 +3,7 @@
 Run the two feeds as one long-lived process on the pilot's PC: credentials, lifecycle, the
 tray, and enough diagnostics that a pilot can tell which of four connections is unhappy.
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Everything the app writes lives in one folder it was put in
 
@@ -54,6 +54,8 @@ It SHALL NOT fall back to any other location on the machine.
 
 - **WHEN** the pilot signs in while the folder takes no writes
 - **THEN** the session works for as long as the app runs, and is gone at the next start
+
+## MODIFIED Requirements
 
 ### Requirement: Secrets are held in the operating system credential store
 
