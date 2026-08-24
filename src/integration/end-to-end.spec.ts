@@ -1,27 +1,22 @@
 import { StubService } from './stub-services';
+import { SessionExpiredError } from '../application/ports/session';
+import { FlightTrackerClient } from '../infrastructure/mypreflight/client';
+import { InMemoryTokenStore } from '../infrastructure/mypreflight/token-store';
 import {
-  FlightTrackerClient,
-  SessionExpiredError,
-} from '../api/mypreflight.client';
-import { InMemoryTokenStore } from '../api/token-store';
-import {
-  AdsbClient,
-  AdsbPublishFailedError,
-  AdsbReportRejectedError,
-  AdsbTokenRejectedError,
-} from '../adsb/adsb.client';
-import { PositionFeed } from '../feeds/position.feed';
-import { PresenceFeed } from '../feeds/presence.feed';
+  PositionPublishFailedError,
+  PositionRejectedError,
+  PublisherUnauthorisedError,
+} from '../application/ports/positions';
+import { AdsbClient } from '../infrastructure/adsb/client';
+import { PositionFeed } from '../application/position.feed';
+import { PresenceFeed } from '../application/presence.feed';
 import { PositionQueue } from '../domain/position-queue';
 import { toPositionReport } from '../domain/position-report';
 import { RatePolicy } from '../domain/rate-policy';
 import type { SimSample } from '../domain/sim-sample';
-import { StatusRegistry } from '../core/status';
-import { Logger } from '../core/logger';
-import type {
-  DiscordActivity,
-  PresenceWriter,
-} from '../discord/presence.writer';
+import { StatusRegistry } from '../application/status';
+import { Logger } from '../infrastructure/logger';
+import type { Presence, PresenceWriter } from '../application/ports/presence';
 
 const FLIGHT_ID = '0f0f6b04-9a5f-4e6c-9c4e-1d2f0f38a3b1';
 
@@ -35,14 +30,14 @@ const presencePayload = {
 };
 
 class RecordingWriter implements PresenceWriter {
-  activities: DiscordActivity[] = [];
+  activities: Presence[] = [];
   clears = 0;
 
   connect(): Promise<void> {
     return Promise.resolve();
   }
 
-  setActivity(activity: DiscordActivity): Promise<void> {
+  setActivity(activity: Presence): Promise<void> {
     this.activities.push(activity);
     return Promise.resolve();
   }
@@ -93,6 +88,7 @@ describe('flight-tracker API integration', () => {
     flightBody = {
       id: FLIGHT_ID,
       callsign: 'AAL 4908',
+      status: 'boarding_started',
       airports: [
         { iataCode: 'BOS', icaoCode: 'KBOS', name: 'Boston Logan' },
         { iataCode: 'PHL', icaoCode: 'KPHL', name: 'Philadelphia' },
@@ -188,6 +184,7 @@ describe('flight-tracker API integration', () => {
     expect(flight).toEqual({
       id: FLIGHT_ID,
       callsign: 'AAL 4908',
+      status: 'boarding_started',
       departure: { iata: 'BOS', icao: 'KBOS', name: 'Boston Logan' },
       arrival: { iata: 'PHL', icao: 'KPHL', name: 'Philadelphia' },
       airframe: 'B77W',
@@ -257,6 +254,7 @@ describe('flight-tracker API integration', () => {
     await expect(flightTracker.getFlight(FLIGHT_ID)).resolves.toEqual({
       id: FLIGHT_ID,
       callsign: 'AAL 4908',
+      status: null,
       departure: null,
       arrival: null,
       airframe: null,
@@ -320,14 +318,7 @@ describe('flight-tracker API integration', () => {
     await feed.tick();
 
     expect(writer.activities).toHaveLength(1);
-    expect(writer.activities[0]).toEqual({
-      state: 'Cruise, landing at 15:50 UTC',
-      details: 'Boston (BOS) -> Philadelphia (PHL)',
-      startTimestamp: Date.UTC(2025, 0, 1, 13, 0, 0),
-      endTimestamp: Date.UTC(2025, 0, 1, 15, 50, 0),
-      smallImageKey: 'flight-tracker',
-      largeImageKey: 'msfs2024',
-    });
+    expect(writer.activities[0]).toEqual(presencePayload);
     expect(writer.clears).toBe(1);
   });
 });
@@ -379,12 +370,13 @@ describe('ADS-B service integration', () => {
     const feed = new PositionFeed(
       new AdsbClient(adsbService.baseUrl, token),
       new PositionQueue(10),
-      new RatePolicy(1),
+      new RatePolicy(1, 1),
       status,
       silentLogger(),
       () => clock,
     );
 
+    feed.setTransmitting(true);
     feed.setCurrentFlightCallsign('AAL 4908');
 
     return {
@@ -403,7 +395,7 @@ describe('ADS-B service integration', () => {
 
     await expect(
       new AdsbClient(adsbService.baseUrl, 'wrong').verifyToken(),
-    ).rejects.toThrow(AdsbTokenRejectedError);
+    ).rejects.toThrow(PublisherUnauthorisedError);
   });
 
   it('publishes a report the ADS-B contract accepts', async () => {
@@ -551,7 +543,9 @@ describe('ADS-B service integration', () => {
     ).publish(toPositionReport(sample(), 'LH455'));
 
     await expect(publishing).rejects.toBeInstanceOf(
-      verdict === 'rejected' ? AdsbReportRejectedError : AdsbPublishFailedError,
+      verdict === 'rejected'
+        ? PositionRejectedError
+        : PositionPublishFailedError,
     );
   });
 

@@ -1,45 +1,63 @@
 import { join } from 'node:path';
-import { loadConfig } from './config/config';
-import { envFilePaths, loadEnvFiles } from './config/env-file';
-import { type LogSink, Logger, streamSink } from './core/logger';
-import { Dashboard } from './tui/dashboard';
-import { previewFrame } from './tui/preview';
-import { useUtf8Console } from './platform/console-encoding';
-import { Screen } from './tui/screen';
-import { type ServiceName, StatusRegistry } from './core/status';
-import { describeError, Supervisor } from './core/supervisor';
+import { loadConfig } from './infrastructure/config/config';
+import { envFilePaths, loadEnvFiles } from './infrastructure/config/env-file';
+import { type LogSink, Logger, streamSink } from './infrastructure/logger';
+import { Dashboard } from './presentation/tui/dashboard';
+import { previewFrame } from './presentation/tui/preview';
+import { useUtf8Console } from './infrastructure/platform/console-encoding';
+import { Screen } from './presentation/tui/screen';
+import { type ServiceName, StatusRegistry } from './application/status';
+import { describeError, Supervisor } from './application/supervisor';
 import {
   FileTokenStore,
   InMemoryTokenStore,
   SecretTokenStore,
   type TokenStore,
-} from './api/token-store';
-import { ConsolePrompt } from './platform/prompt';
-import { appDirectory, resolveStorage, type Storage } from './platform/paths';
-import { secretStoreFor } from './platform/secret-store';
-import { Downloader } from './update/downloader';
-import { Updater } from './update/updater';
-import { promptForSignIn } from './api/sign-in';
+} from './infrastructure/mypreflight/token-store';
+import { ConsolePrompt } from './presentation/tui/prompt';
 import {
-  isUpdateAvailable,
-  type Release,
-  ReleaseClient,
-} from './api/release.client';
+  appDirectory,
+  ensureWritable,
+  resolveStorage,
+  type Storage,
+} from './infrastructure/platform/paths';
 import {
-  FlightTrackerClient,
+  downloadsDirectory,
+  uniquePath,
+} from './infrastructure/platform/downloads';
+import { secretStoreFor } from './infrastructure/platform/secret-store';
+import type { DownloadArea } from './application/ports/downloads';
+import { Downloader } from './infrastructure/github/downloader';
+import { Updater } from './application/updater';
+import { promptForSignIn } from './application/sign-in';
+import { isUpdateAvailable, type Release } from './domain/release';
+import { ReleaseClient } from './infrastructure/github/release.client';
+import {
   NotSignedInError,
   SessionExpiredError,
-} from './api/mypreflight.client';
-import { AdsbClient, AdsbTokenRejectedError } from './adsb/adsb.client';
-import { IpcPresenceWriter } from './discord/ipc-presence.writer';
+} from './application/ports/session';
+import { FlightTrackerClient } from './infrastructure/mypreflight/client';
+import { PublisherUnauthorisedError } from './application/ports/positions';
+import { AdsbClient } from './infrastructure/adsb/client';
+import { IpcPresenceWriter } from './infrastructure/discord/ipc-presence.writer';
 import { isPlausibleCallsign } from './domain/callsign';
+import type { FlightStatus } from './domain/flight-status';
+import { TransponderSchedule } from './domain/transponder-schedule';
 import { PositionQueue } from './domain/position-queue';
 import { RatePolicy } from './domain/rate-policy';
-import { PositionFeed } from './feeds/position.feed';
-import { PresenceFeed } from './feeds/presence.feed';
-import { PROTOCOL_NAMES, SimconnectSource } from './sim/simconnect.source';
-import { NoTray, type Tray, trayColour, trayTooltip } from './tray/tray';
-import { openWindowsTray } from './tray/win32.tray';
+import { PositionFeed } from './application/position.feed';
+import { PresenceFeed } from './application/presence.feed';
+import {
+  PROTOCOL_NAMES,
+  SimconnectSource,
+} from './infrastructure/sim/simconnect.source';
+import {
+  NoTray,
+  type Tray,
+  trayColour,
+  trayTooltip,
+} from './presentation/tray/tray';
+import { openWindowsTray } from './presentation/tray/win32.tray';
 
 const SESSION_FILE = 'session.json';
 
@@ -85,7 +103,12 @@ async function bootstrap(): Promise<void> {
   const adsbToken = process.env.ADSB_CLIENT_TOKEN ?? '';
   const adsb = new AdsbClient(config.adsbBaseUrl, adsbToken);
   const releases = new ReleaseClient();
-  const updater = new Updater(new Downloader(), status, logger.child('update'));
+  const updater = new Updater(
+    new Downloader(),
+    status,
+    logger.child('update'),
+    downloadArea(),
+  );
 
   let latestRelease: Release | null = null;
   let announcedRelease: string | null = null;
@@ -131,13 +154,13 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  await adsb.verifyToken().then(
+  void adsb.verifyToken().then(
     () => {
-      status.set('adsb', 'connected');
       status.setFault('adsb', null);
+      positionFeed.reportState();
     },
     (error: unknown) => {
-      const rejected = error instanceof AdsbTokenRejectedError;
+      const rejected = error instanceof PublisherUnauthorisedError;
       status.set('adsb', rejected ? 'unauthorised' : 'disconnected');
       status.setFault(
         'adsb',
@@ -148,6 +171,21 @@ async function bootstrap(): Promise<void> {
       logger.error(`ADS-B token check failed: ${describeError(error)}`);
     },
   );
+
+  const schedule = new TransponderSchedule();
+
+  const applySchedule = (phase: FlightStatus | null): void => {
+    const transmit = schedule.decide(phase);
+
+    if (transmit === null || transmit === positionFeed.isTransmitting) {
+      return;
+    }
+
+    logger.info(
+      `flight is ${phase}: the transponder switches itself to ${transmit ? 'MODE C' : 'standby'}`,
+    );
+    positionFeed.setTransmitting(transmit);
+  };
 
   let callsignOverride: string | null = null;
 
@@ -219,6 +257,7 @@ async function bootstrap(): Promise<void> {
             },
       );
       applyCallsign(flight?.callsign ?? null);
+      applySchedule(flight?.status ?? null);
       status.set('api', 'connected');
       status.setFault('api', null);
     } catch (error) {
@@ -231,6 +270,7 @@ async function bootstrap(): Promise<void> {
         status.setCrew(null);
         status.setService(null);
         applyCallsign(null);
+        applySchedule(null);
       } else {
         status.set('api', 'disconnected');
         status.setFault('api', describeError(error));
@@ -276,6 +316,7 @@ async function bootstrap(): Promise<void> {
         status.setCrew(null);
         status.setService(null);
         applyCallsign(null);
+        applySchedule(null);
         logger.info('signed out: press s to sign in again');
         dashboard?.revealLogs();
       },
@@ -288,6 +329,20 @@ async function bootstrap(): Promise<void> {
 
   const toggleTransmitting = (): void => {
     positionFeed.setTransmitting(!positionFeed.isTransmitting);
+  };
+
+  let refreshing = false;
+
+  const refreshCurrentFlight = (): void => {
+    if (refreshing) {
+      return;
+    }
+
+    refreshing = true;
+    logger.info('reading the current flight again');
+    void pollCurrentFlight().finally(() => {
+      refreshing = false;
+    });
   };
 
   const announceRelease = (release: Release): void => {
@@ -357,6 +412,7 @@ async function bootstrap(): Promise<void> {
       onSignIn: signIn,
       onSignOut: signOut,
       onTransmit: toggleTransmitting,
+      onRefresh: refreshCurrentFlight,
       onUpdate: downloadRelease,
     });
     process.stdout.on('resize', () => dashboard.resize());
@@ -486,6 +542,14 @@ async function bootstrap(): Promise<void> {
   });
 }
 
+function downloadArea(): DownloadArea {
+  return {
+    directory: () => downloadsDirectory(),
+    ensureWritable,
+    uniquePath: (directory, fileName) => uniquePath(directory, fileName),
+  };
+}
+
 function tokenStoreFor(storage: Storage): TokenStore {
   if (!storage.writable) {
     return new InMemoryTokenStore();
@@ -501,7 +565,7 @@ function tokenStoreFor(storage: Storage): TokenStore {
 async function fetchRelease(): Promise<void> {
   const status = new StatusRegistry();
   const logger = new Logger('info', null, 'update');
-  const updater = new Updater(new Downloader(), status, logger);
+  const updater = new Updater(new Downloader(), status, logger, downloadArea());
   let release: Release;
 
   try {

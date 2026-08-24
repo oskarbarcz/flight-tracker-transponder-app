@@ -116,10 +116,69 @@ transponder, Discord, and the state of both services.
 ╰───────────────────────────╯╰───────────────────────────────────────────────╯
 ```
 
+### The transponder switches itself
+
+It looks up your current flight the moment it starts, and follows that flight
+through the platform from then on:
+
+| The flight reports  | The transponder |
+|---------------------|-----------------|
+| boarding started    | `MODE C`        |
+| on block            | `STBY`          |
+
+It comes up in `STBY` and stays there until boarding starts, so it never
+publishes a position for a flight that has not begun. Start it mid-flight and
+it arms itself straight away rather than waiting for the next boarding — the
+flight is already under way. Between those two edges the switch is yours:
+press `t` and it stays where you put it until the flight reaches the next edge.
+
+Reports go out every ten seconds, and every thirty above 10,000 ft, where a
+position a few seconds old is a position a few miles out either way. Takeoff and
+touchdown are always published on the second they happen.
+
+### Keys
+
+| Key | What it does                                                    |
+|-----|-----------------------------------------------------------------|
+| `s` | sign in, or sign out — refused while the transponder transmits  |
+| `t` | switch the transponder between `MODE C` and `STBY` by hand      |
+| `c` | publish under a callsign you type, rather than the flight's     |
+| `r` | read the current flight again, without waiting for the poll     |
+| `d` | show the log                                                    |
+| `u` | download a newer release, when there is one                     |
+
 ## Development
 
 Needs Node 26. Both local sockets are reachable from macOS, so no Windows machine
 is needed day to day.
+
+### Layout
+
+Four layers, and a file at the top that knows all of them. What a file may import
+runs downward only — `main.ts` is the exception, because building the object graph
+is what it is for.
+
+```
+src/
+  main.ts           composition root: reads the config, wires everything, starts the loops
+  domain/           the rules, and nothing that talks to anything: callsign, squawk,
+                    report cadence, the flight phases that arm the transponder
+  application/      the use cases: both feeds, sign-in, the updater, the supervisor
+                    that restarts them, and the status registry they all report into
+    ports/          what the use cases need, in their own words — an interface per
+                    collaborator, and the error types the outcomes are branched on
+  infrastructure/   everything outside the process, grouped by what it talks to —
+                    mypreflight/  adsb/  github/  sim/  discord/  platform/  config/
+  presentation/     the two things a pilot looks at: tui/ and tray/
+  integration/      tests that span the layers, against stub services over real HTTP
+```
+
+Imports run downward only, and the adapters reach the core through `application/ports`
+rather than the use cases directly — `src/architecture.spec.ts` walks the tree and fails
+the suite on anything that does not.
+
+Tests sit beside what they test, so `domain/rate-policy.ts` is covered by
+`domain/rate-policy.spec.ts`.
 
 ```bash
 npm install
