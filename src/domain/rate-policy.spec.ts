@@ -1,10 +1,20 @@
-import { PUBLISH_INTERVAL_TICKS, RatePolicy } from './rate-policy';
+import {
+  HIGH_LEVEL_FT,
+  HIGH_LEVEL_PUBLISH_INTERVAL_TICKS,
+  PUBLISH_INTERVAL_TICKS,
+  RatePolicy,
+} from './rate-policy';
 
-function run(policy: RatePolicy, onGround: boolean, ticks: number): number {
+function run(
+  policy: RatePolicy,
+  onGround: boolean,
+  ticks: number,
+  altitudeFt = 0,
+): number {
   let published = 0;
 
   for (let tick = 0; tick < ticks; tick += 1) {
-    if (policy.shouldPublish(onGround)) {
+    if (policy.shouldPublish(onGround, altitudeFt)) {
       published += 1;
     }
   }
@@ -47,6 +57,42 @@ describe('RatePolicy', () => {
 
     expect(run(policy, true, PUBLISH_INTERVAL_TICKS - 1)).toBe(0);
     expect(policy.shouldPublish(true)).toBe(true);
+  });
+
+  it('publishes once every thirty seconds above ten thousand feet', () => {
+    expect(HIGH_LEVEL_PUBLISH_INTERVAL_TICKS).toBe(30);
+    expect(HIGH_LEVEL_FT).toBe(10_000);
+    expect(run(new RatePolicy(), false, 180, 35_000)).toBe(6);
+  });
+
+  it('holds the ten-second cadence at ten thousand feet exactly', () => {
+    expect(run(new RatePolicy(), false, 60, HIGH_LEVEL_FT)).toBe(6);
+  });
+
+  it('goes back to ten seconds on the way down', () => {
+    const policy = new RatePolicy();
+    run(policy, false, 60, 35_000);
+
+    expect(run(policy, false, 60, 9_000)).toBe(6);
+  });
+
+  it('publishes on the first tick back below ten thousand feet', () => {
+    const policy = new RatePolicy();
+    policy.shouldPublish(false, 35_000);
+    run(policy, false, 14, 35_000);
+
+    expect(policy.shouldPublish(false, 9_500)).toBe(true);
+  });
+
+  it('still publishes both edges at high level', () => {
+    const policy = new RatePolicy();
+    policy.shouldPublish(true, 12_000);
+
+    expect(policy.shouldPublish(false, 12_000)).toBe(true);
+  });
+
+  it('reads an altitude the simulator could not supply as low level', () => {
+    expect(run(new RatePolicy(), false, 60, Number.NaN)).toBe(6);
   });
 
   it('starts over after a reset', () => {
