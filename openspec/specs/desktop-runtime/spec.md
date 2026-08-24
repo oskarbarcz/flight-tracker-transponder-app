@@ -15,6 +15,11 @@ Signing in SHALL be reachable for as long as the app is running, and not only in
 before the dashboard takes the console. The outcome of an attempt SHALL be shown to the pilot
 rather than only written to the log file, and the password SHALL NOT be echoed.
 
+Where a session is already stored, the current flight SHALL be read as the app starts, and no
+slower start-up work SHALL be allowed to hold that reading up. The pilot SHALL also be able to
+ask for the flight to be read again at any time, so that something changed in the platform can
+be picked up at once rather than at the next poll.
+
 #### Scenario: First run
 
 - **WHEN** the app starts with no stored session
@@ -38,6 +43,17 @@ rather than only written to the log file, and the password SHALL NOT be echoed.
 - **THEN** the current flight is looked up immediately rather than at the next poll, and the
   result of the attempt is put in front of the pilot
 
+#### Scenario: A session was already stored
+
+- **WHEN** the app starts with a session it can renew
+- **THEN** the current flight is read at once, and nothing slower — the ADS-B token check among
+  them — holds that reading up
+
+#### Scenario: The pilot asks for the flight again
+
+- **WHEN** the pilot presses the key that re-reads the flight
+- **THEN** the flight is read at once, and holding the key down does not stack up requests
+
 #### Scenario: Access token expires during a flight
 
 - **WHEN** the access token reaches its expiry mid-flight
@@ -51,15 +67,17 @@ rather than only written to the log file, and the password SHALL NOT be echoed.
 
 ### Requirement: Secrets are held in the operating system credential store
 
-The system SHALL store the refresh token and the ADS-B client token in the Windows credential
-store, scoped to the signed-in Windows user, and SHALL NOT write either to a configuration
-file or a log. Where the credential store cannot be used, the fallback SHALL be an encrypted
-file bound to the Windows user account — never plaintext.
+The system SHALL store the refresh token in the Windows credential store, scoped to the
+signed-in Windows user, with the encrypted blob beside the executable, and SHALL NOT write it
+to a configuration file or a log. Where the credential store cannot be used, the fallback
+SHALL be a `0600` file in the same folder. Where the folder cannot be written to, the token
+SHALL be held in memory for the life of the process and nowhere else.
 
 #### Scenario: Tokens at rest
 
-- **WHEN** the app has signed in and is running
-- **THEN** neither token appears in any file the app writes, including diagnostics
+- **WHEN** the pilot has signed in and the app is stopped
+- **THEN** the folder holds the encrypted session and nothing readable, and no secret exists
+  anywhere else on the machine
 
 ### Requirement: The ADS-B client token is validated at startup
 
@@ -120,7 +138,9 @@ SHALL report when the last report was accepted, precisely enough to tell a feed 
 from one that is a second old.
 
 Every key the system offers SHALL be visually distinguishable from the words describing it. The
-system SHALL NOT advertise quitting as one of them.
+system SHALL NOT advertise quitting as one of them. Every key SHALL be named on one line at the
+width the view is drawn for, in every state that line can be in, so that learning the keys never
+costs the pilot a wider terminal.
 
 #### Scenario: The simulator is flying a different aircraft than the flight assigns
 
@@ -131,6 +151,12 @@ system SHALL NOT advertise quitting as one of them.
 
 - **WHEN** the feed stopped some minutes ago
 - **THEN** the time of the last accepted report is shown, and is what reveals it
+
+#### Scenario: All the keys at once
+
+- **WHEN** the view is drawn at eighty columns in the state whose hint line is longest — a
+  session to end, and the log pane open
+- **THEN** every key it offers is named on that line, none of it cut off
 
 ### Requirement: A broken connection says why, on the screen
 
@@ -266,4 +292,54 @@ the pilot needs to act on SHALL NOT depend on that pane being open.
 
 - **WHEN** a sign-in fails, or an update is waiting
 - **THEN** it is put on the frame itself, not only into the log pane
+
+### Requirement: Everything the app writes lives in one folder it was put in
+
+The system SHALL resolve every file it writes — the encrypted session and the log — against
+the directory holding the executable, independent of the working directory it was started
+from. It SHALL NOT write to `%APPDATA%`, `%LOCALAPPDATA%`, the registry, or any other location
+outside that folder, and SHALL NOT register a service, a shortcut or an autostart entry.
+Deleting the folder SHALL remove every trace of the app but the downloads the pilot asked for.
+
+A pilot who wants the state elsewhere SHALL be able to name that folder in configuration,
+Windows-style variables included, and the folder SHALL be created if it does not exist.
+
+Where there is no executable to sit beside — the app run from source under a runtime — the
+working directory SHALL be used instead.
+
+#### Scenario: Started from somewhere else
+
+- **WHEN** the app is launched by a shortcut, a terminal or a scheduled task whose working
+  directory is not the app's folder
+- **THEN** the session and the log are written beside the executable, not into that directory
+
+#### Scenario: Carried on a stick
+
+- **WHEN** the folder is copied to another machine and the app is started
+- **THEN** it runs, and asks for the password again, because the credential store bound the
+  session to the Windows account that signed in
+
+#### Scenario: The pilot wants the state somewhere else
+
+- **WHEN** `DATA_DIR` names a folder, absolute or relative to the app, with or without
+  `%WINDOWS_STYLE%` variables
+- **THEN** the session and the log go there, and the folder is created if needed
+
+### Requirement: A folder that cannot be written to is a reported state, not a failure
+
+The system SHALL detect that it cannot write to its own folder before it needs to, SHALL keep
+running with the session held in memory only and no log file, and SHALL put the folder and the
+way out in front of the pilot on the dashboard rather than only in a log line it cannot write.
+It SHALL NOT fall back to any other location on the machine.
+
+#### Scenario: Dropped into Program Files
+
+- **WHEN** the app runs from a folder that refuses writes
+- **THEN** the dashboard names that folder, says the session and the log are off, and both
+  feeds run as normal
+
+#### Scenario: The pilot signs in anyway
+
+- **WHEN** the pilot signs in while the folder takes no writes
+- **THEN** the session works for as long as the app runs, and is gone at the next start
 
