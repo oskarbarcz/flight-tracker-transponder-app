@@ -101,7 +101,7 @@ $blob = @(
   $info.ProductVersion
 ) -join ' | '
 
-if ($blob -notmatch 'oskarbarcz') {
+if ($info.CompanyName -notmatch 'mypreflight') {
   throw "file properties lack the publisher: $blob"
 }
 if ($blob -notmatch 'MyPreflight') {

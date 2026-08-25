@@ -3,7 +3,7 @@ import type { Release, ReleaseAsset } from '../../domain/release';
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export const RELEASES_URL =
-  'https://api.github.com/repos/oskarbarcz/flight-tracker-transponder-app/releases/latest';
+  'https://api.github.com/repos/mypreflight/transponder-app/releases/latest';
 
 export const EXECUTABLE_NAME = 'mypreflight-transponder.exe';
 

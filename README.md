@@ -1,11 +1,11 @@
 <div align="center">
 
-[![oskar barcz / flight-tracker-transponder-app][banner]][homepage]
+[![mypreflight / transponder-app][banner]][homepage]
 
 The desktop companion app for [**MyPreflight**][homepage] platform. App acts like an HTTP-based transponder, feeding
 position from your flight simulator to our dedicated ADS-B receiver.
 
-<a href="https://github.com/oskarbarcz/flight-tracker-transponder-app/releases/latest">
+<a href="https://github.com/mypreflight/transponder-app/releases/latest">
   <img src="https://img.shields.io/badge/Download%20for%20Windows-2EA44F?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI%2BPHBhdGggZD0iTTEyIDE3IDUgMTBoNFYzaDZ2N2g0ek00IDE5aDE2djJINHoiLz48L3N2Zz4%3D" alt="Download for Windows" height="46">
 </a>
 
@@ -223,11 +223,11 @@ not be used for real-world aviation operations.
 
 [banner]: .github/assets/background.png
 [homepage]: https://mypreflight.io
-[ci-badge]: https://img.shields.io/github/actions/workflow/status/oskarbarcz/flight-tracker-transponder-app/integrity.yaml?branch=main&style=for-the-badge&label=integrity
-[ci-url]: https://github.com/oskarbarcz/flight-tracker-transponder-app/actions/workflows/integrity.yaml
-[release-badge]: https://img.shields.io/github/v/release/oskarbarcz/flight-tracker-transponder-app?style=for-the-badge
-[release-url]: https://github.com/oskarbarcz/flight-tracker-transponder-app/releases/latest
-[license-badge]: https://img.shields.io/github/license/oskarbarcz/flight-tracker-transponder-app?style=for-the-badge
+[ci-badge]: https://img.shields.io/github/actions/workflow/status/mypreflight/transponder-app/integrity.yaml?branch=main&style=for-the-badge&label=integrity
+[ci-url]: https://github.com/mypreflight/transponder-app/actions/workflows/integrity.yaml
+[release-badge]: https://img.shields.io/github/v/release/mypreflight/transponder-app?style=for-the-badge
+[release-url]: https://github.com/mypreflight/transponder-app/releases/latest
+[license-badge]: https://img.shields.io/github/license/mypreflight/transponder-app?style=for-the-badge
 [license-url]: https://unlicense.org
 [node-shield]: https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white
 [node-url]: https://nodejs.org
