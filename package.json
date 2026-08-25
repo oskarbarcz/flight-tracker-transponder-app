@@ -1,9 +1,9 @@
 {
-  "name": "flight-tracker-transponder-app",
-  "version": "0.13.0",
+  "name": "transponder-app",
+  "version": "1.0.0",
   "private": true,
   "homepage": "https://mypreflight.io",
-  "author": "oskarbarcz",
+  "author": "mypreflight",
   "license": "Unlicense",
   "description": "The desktop companion app for MyPreflight platform.",
   "main": "dist/main.js",
