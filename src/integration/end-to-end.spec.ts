@@ -90,8 +90,18 @@ describe('flight-tracker API integration', () => {
       callsign: 'AAL 4908',
       status: 'boarding_started',
       airports: [
-        { iataCode: 'BOS', icaoCode: 'KBOS', name: 'Boston Logan' },
-        { iataCode: 'PHL', icaoCode: 'KPHL', name: 'Philadelphia' },
+        {
+          type: 'departure',
+          iataCode: 'BOS',
+          icaoCode: 'KBOS',
+          name: 'Boston Logan',
+        },
+        {
+          type: 'destination',
+          iataCode: 'PHL',
+          icaoCode: 'KPHL',
+          name: 'Philadelphia',
+        },
       ],
       aircraft: {
         registration: 'N720AN',
@@ -193,6 +203,51 @@ describe('flight-tracker API integration', () => {
     expect(api.requestsTo('/api/v1/user/me')[0]?.authorization).toBe(
       'Bearer access-1',
     );
+  });
+
+  it('reads the route by airport type, not by position', async () => {
+    flightBody = {
+      id: FLIGHT_ID,
+      callsign: 'AAL 4908',
+      status: 'boarding_started',
+      airports: [
+        {
+          type: 'destination_alternate',
+          iataCode: 'IAD',
+          icaoCode: 'KIAD',
+          name: 'Washington Dulles',
+        },
+        {
+          type: 'destination',
+          iataCode: 'PHL',
+          icaoCode: 'KPHL',
+          name: 'Philadelphia',
+        },
+        {
+          type: 'departure',
+          iataCode: 'BOS',
+          icaoCode: 'KBOS',
+          name: 'Boston Logan',
+        },
+      ],
+      aircraft: {},
+    };
+
+    const flightTracker = client();
+    await flightTracker.signIn('pilot@example.com', 'P@$$w0rd');
+
+    const flight = await flightTracker.getFlight(FLIGHT_ID);
+
+    expect(flight.departure).toEqual({
+      iata: 'BOS',
+      icao: 'KBOS',
+      name: 'Boston Logan',
+    });
+    expect(flight.arrival).toEqual({
+      iata: 'PHL',
+      icao: 'KPHL',
+      name: 'Philadelphia',
+    });
   });
 
   it('renews with the refresh token as the bearer and no body', async () => {
