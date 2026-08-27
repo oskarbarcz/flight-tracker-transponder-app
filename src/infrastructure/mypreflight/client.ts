@@ -53,6 +53,10 @@ const VERSION_TIMEOUT_MS = 20_000;
 
 const STATUS_TIMEOUT_MS = 4_000;
 
+const DEPARTURE = 'departure';
+
+const DESTINATION = 'destination';
+
 export class FlightTrackerClient implements PresenceSource {
   private accessToken: string | null = null;
   private accessTokenExpiresAt = 0;
@@ -179,8 +183,8 @@ export class FlightTrackerClient implements PresenceSource {
       id: flight.id,
       callsign: flight.callsign,
       status: toFlightStatus(flight.status),
-      departure: toAirport(airports[0]),
-      arrival: toAirport(airports[1]),
+      departure: pickAirport(airports, DEPARTURE, 0),
+      arrival: pickAirport(airports, DESTINATION, 1),
       airframe: text(flight.aircraft?.airframe?.type),
       registration: text(flight.aircraft?.registration),
     };
@@ -271,6 +275,21 @@ export class FlightTrackerClient implements PresenceSource {
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function pickAirport(
+  airports: unknown[],
+  type: string,
+  position: number,
+): Airport | null {
+  const tagged = airports.find(
+    (entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      (entry as Record<string, unknown>).type === type,
+  );
+
+  return toAirport(tagged ?? airports[position]);
 }
 
 function toAirport(value: unknown): Airport | null {
