@@ -55,15 +55,32 @@ run in the same folder, so rename the first before the second run.
 ## What the summary is telling us
 
 ```
-hello       the capabilities this GSX advertises — the whole feature-detection story
+hello       the capabilities this GSX advertises
+pushed      how many frames GSX sent unasked — the first run got ZERO,
+            which is the question this round exists to answer
+types       every frame type that arrived
 keys        which top-level parts of GSX's state actually arrived
 services    the service ids this GSX publishes
 states      every state value seen across the session
-envelope    which request shape GSX answered — if this says "none answered",
-            the probe results below mean nothing
-probes      exists / absent per verb. "exists" on service.trigger would mean a
-            later change can drive GSX directly instead of walking its menu
+probes      KNOWN / absent per message type, with GSX's own error wording
+warning     if this line appears, the control type was not refused the way
+            it should be and every verdict is inconclusive
 ```
+
+A request is `{"v":1,"type":"<verb>","id":"<id>", ...arguments}` — GSX dispatches on `type`,
+and refuses anything else with `"unknown message type"`. So a probe answered with any *other*
+complaint proves that type is real and only its arguments were wrong. That is what `KNOWN`
+means.
+
+## The one thing to watch for
+
+The first run recorded no state whatsoever — GSX sent a `hello` and then nothing, for ten
+minutes, with a flight loaded. This round probes `subscribe`, `state.get`, `get` and a client
+`hello` to find whatever opens the feed.
+
+So after the probes finish, **leave it running for a minute and watch**. If `pushed` climbs
+above zero in the Ctrl+C summary, something in the probe list woke GSX up, and the JSONL says
+which message came immediately before the first snapshot.
 
 ## If it will not connect
 

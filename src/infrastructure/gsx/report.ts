@@ -1,6 +1,5 @@
 import type { CaptureSummary } from './capture';
-import type { Envelope, ProbeOutcome } from './probe';
-import { verbExists } from './probe';
+import { type ProbeOutcome, controlHeld, typeExists } from './probe';
 
 const LABEL_WIDTH = 10;
 
@@ -9,7 +8,6 @@ const RULE_WIDTH = 72;
 export type ReportInput = {
   file: string;
   summary: CaptureSummary;
-  envelope: Envelope | null;
   outcomes: ProbeOutcome[];
 };
 
@@ -25,22 +23,20 @@ export function formatReport(input: ReportInput): string[] {
         ? `${summary.frames}`
         : `${summary.frames} (${summary.unparsed} unreadable)`,
     ),
+    ...field(
+      'pushed',
+      summary.pushed === 0
+        ? 'nothing — GSX sent no state of its own'
+        : `${summary.pushed} frames GSX sent unasked`,
+    ),
     ...field('hello', summary.hello ?? 'never sent'),
+    ...field('types', list(summary.types)),
     ...field('keys', list(summary.keys)),
     ...field('services', list(summary.services)),
     ...field('states', list(summary.serviceStates)),
-    ...field('envelope', envelopeLine(input.envelope)),
     ...probeLines(input.outcomes),
     rule(''),
   ];
-}
-
-function envelopeLine(envelope: Envelope | null): string {
-  if (envelope === null) {
-    return 'none answered — every probe below is inconclusive';
-  }
-
-  return `${envelope.name} ${JSON.stringify(envelope.build('<id>', '<verb>', {}))}`;
 }
 
 function probeLines(outcomes: ProbeOutcome[]): string[] {
@@ -48,16 +44,23 @@ function probeLines(outcomes: ProbeOutcome[]): string[] {
     return field('probes', 'not run');
   }
 
-  const width = Math.max(...outcomes.map((outcome) => outcome.verb.length));
+  const width = Math.max(...outcomes.map((outcome) => outcome.type.length));
+  const caveat = controlHeld(outcomes)
+    ? []
+    : field(
+        'warning',
+        'the control type was not refused as unknown — every verdict below is inconclusive',
+      );
 
   return [
+    ...caveat,
     'probes',
     ...outcomes.map((outcome) => {
-      const exists = verbExists(outcome);
-      const verdict =
-        exists === null ? 'unknown' : exists ? 'exists' : 'absent';
+      const exists = typeExists(outcome);
+      const verdict = exists === null ? 'unknown' : exists ? 'KNOWN' : 'absent';
+      const detail = outcome.message ?? outcome.code ?? outcome.answer;
 
-      return `  ${outcome.verb.padEnd(width)}  ${verdict.padEnd(7)}  ${outcome.code ?? outcome.answer}`;
+      return `  ${outcome.type.padEnd(width)}  ${verdict.padEnd(7)}  ${detail}`;
     }),
   ];
 }

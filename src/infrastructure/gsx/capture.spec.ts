@@ -132,6 +132,21 @@ describe('CaptureRecorder', () => {
     expect(capture.summary().services).toEqual([]);
   });
 
+  it('counts frames GSX pushed of its own accord, and not our own replies', () => {
+    const { recorder: capture } = recorder();
+
+    capture.record(frame({ type: 'hello' }));
+    capture.record(frame({ type: 'result', id: 'probe-x', ok: true }));
+    capture.record(frame({ type: 'snapshot', services: [] }));
+    capture.record(frame({ type: 'patch', path: '/services', value: [] }));
+
+    expect(capture.summary()).toMatchObject({
+      frames: 4,
+      pushed: 2,
+      types: ['hello', 'patch', 'result', 'snapshot'],
+    });
+  });
+
   it('counts every frame it was given', () => {
     const { recorder: capture } = recorder();
 

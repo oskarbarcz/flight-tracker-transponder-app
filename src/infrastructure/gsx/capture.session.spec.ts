@@ -4,7 +4,7 @@ import type {
   GsxSocketEvent,
   GsxSocketEventType,
 } from './connection';
-import { CONTROL_VERB, ENVELOPES } from './probe';
+import { CONTROL_TYPE, TYPE_PROBES, UNKNOWN_TYPE_MESSAGE } from './probe';
 
 class FakeGsx implements GsxSocket {
   readonly sent: Record<string, unknown>[] = [];
@@ -15,7 +15,7 @@ class FakeGsx implements GsxSocket {
     ((event: GsxSocketEvent) => void)[]
   >();
 
-  constructor(private readonly answers: (verb: string) => string | null) {}
+  constructor(private readonly answers: (type: string) => string | null) {}
 
   addEventListener(
     type: GsxSocketEventType,
@@ -28,10 +28,10 @@ class FakeGsx implements GsxSocket {
     const message = JSON.parse(data) as Record<string, unknown>;
     this.sent.push(message);
 
-    const verb = String(message.verb ?? message.type);
-    const code = this.answers(verb);
+    const type = String(message.type);
+    const complaint = this.answers(type);
 
-    if (code === null) {
+    if (complaint === null) {
       return;
     }
 
@@ -42,7 +42,7 @@ class FakeGsx implements GsxSocket {
           type: 'result',
           id: message.id,
           ok: false,
-          error: { code, message: verb },
+          error: { code: 'bad_args', message: complaint },
         }),
       }),
     );
@@ -88,7 +88,7 @@ const SNAPSHOT = JSON.stringify({
 
 describe('CaptureSession', () => {
   it('records every frame it receives and reports on what it saw', async () => {
-    const socket = new FakeGsx(() => 'unknown_verb');
+    const socket = new FakeGsx(() => UNKNOWN_TYPE_MESSAGE);
     const { lines, session: capture } = session(socket);
     const starting = capture.start();
 
@@ -108,9 +108,11 @@ describe('CaptureSession', () => {
     expect(text).toContain('parking');
   });
 
-  it('tries the control verb first, so an answer proves the envelope', async () => {
-    const socket = new FakeGsx((verb) =>
-      verb === CONTROL_VERB ? 'unknown_verb' : 'not_found',
+  it('probes the control type first, and sends the verb as the message type', async () => {
+    const socket = new FakeGsx((type) =>
+      type === 'settings.get'
+        ? 'missing parameter "page"'
+        : UNKNOWN_TYPE_MESSAGE,
     );
     const { session: capture } = session(socket);
     const starting = capture.start();
@@ -119,15 +121,22 @@ describe('CaptureSession', () => {
     await starting;
     await capture.probe();
 
-    expect(socket.sent[0]).toMatchObject({
-      verb: CONTROL_VERB,
-      id: `probe-control-${ENVELOPES[0]?.name}`,
+    expect(socket.sent[0]).toEqual({
+      v: 1,
+      type: CONTROL_TYPE,
+      id: `probe-${CONTROL_TYPE}`,
     });
-    expect(capture.report().join('\n')).toContain('exists');
+    expect(socket.sent).toHaveLength(TYPE_PROBES.length);
+
+    const text = capture.report().join('\n');
+
+    expect(text).toContain('settings.get');
+    expect(text).toContain('KNOWN');
+    expect(text).not.toContain('inconclusive');
   });
 
-  it('runs no probes when GSX answers no envelope', async () => {
-    const socket = new FakeGsx(() => null);
+  it('calls the probes inconclusive when the control type was not refused as unknown', async () => {
+    const socket = new FakeGsx(() => 'something else entirely');
     const { session: capture } = session(socket);
     const starting = capture.start();
 
@@ -135,8 +144,22 @@ describe('CaptureSession', () => {
     await starting;
     await capture.probe();
 
-    expect(socket.sent).toHaveLength(ENVELOPES.length);
     expect(capture.report().join('\n')).toContain('inconclusive');
+  });
+
+  it('reports that GSX pushed nothing when only hellos and results arrived', async () => {
+    const socket = new FakeGsx(() => UNKNOWN_TYPE_MESSAGE);
+    const { session: capture } = session(socket);
+    const starting = capture.start();
+
+    socket.emit('open');
+    await starting;
+    socket.emit('message', { data: '{"v":1,"type":"hello"}' });
+    await capture.probe();
+
+    expect(capture.report().join('\n')).toContain(
+      'GSX sent no state of its own',
+    );
   });
 
   it('closes the socket when it is stopped', async () => {
@@ -152,7 +175,7 @@ describe('CaptureSession', () => {
   });
 
   it('never sends a menu verb', async () => {
-    const socket = new FakeGsx(() => 'unknown_verb');
+    const socket = new FakeGsx(() => UNKNOWN_TYPE_MESSAGE);
     const { session: capture } = session(socket);
     const starting = capture.start();
 
@@ -161,7 +184,8 @@ describe('CaptureSession', () => {
     await capture.probe();
 
     for (const message of socket.sent) {
-      expect(JSON.stringify(message)).not.toContain('menu.');
+      expect(JSON.stringify(message)).not.toContain('menu.pick');
+      expect(JSON.stringify(message)).not.toContain('gate.select');
     }
   });
 });

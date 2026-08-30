@@ -1,14 +1,23 @@
 import type { CaptureSummary } from './capture';
-import { ENVELOPES } from './probe';
+import { CONTROL_TYPE, UNKNOWN_TYPE_MESSAGE } from './probe';
 import { formatReport } from './report';
 
 const summary: CaptureSummary = {
   hello: '{"type":"hello","capabilities":["services"]}',
   frames: 1462,
   unparsed: 0,
+  pushed: 1440,
+  types: ['hello', 'patch', 'snapshot'],
   keys: ['airport', 'services'],
   services: ['Boarding', 'Refueling'],
   serviceStates: ['available', 'performing'],
+};
+
+const held = {
+  type: CONTROL_TYPE,
+  answer: 'unknown-type' as const,
+  code: 'bad_args',
+  message: UNKNOWN_TYPE_MESSAGE,
 };
 
 function report(
@@ -17,8 +26,7 @@ function report(
   return formatReport({
     file: 'C:\\gsx\\gsx-capture.jsonl',
     summary,
-    envelope: ENVELOPES[0] ?? null,
-    outcomes: [],
+    outcomes: [held],
     ...over,
   }).join('\n');
 }
@@ -62,36 +70,75 @@ describe('formatReport', () => {
     ).toContain('none seen');
   });
 
-  it('shows the envelope shape that worked', () => {
-    expect(report()).toContain('"verb":"<verb>"');
+  it('says whether GSX pushed any state of its own', () => {
+    expect(report()).toContain('1440 frames GSX sent unasked');
+    expect(report({ summary: { ...summary, pushed: 0 } })).toContain(
+      'GSX sent no state of its own',
+    );
   });
 
-  it('warns that the probes mean nothing when no envelope answered', () => {
-    expect(report({ envelope: null })).toContain('inconclusive');
+  it('lists the frame types that arrived', () => {
+    expect(report()).toContain('hello, patch, snapshot');
   });
 
-  it('says whether each probed verb exists', () => {
+  it('says whether each probed type is dispatched on', () => {
     const text = report({
       outcomes: [
+        held,
         {
-          verb: 'service.trigger',
-          answer: 'refused',
-          code: 'not_found',
-          raw: null,
+          type: 'settings.get',
+          answer: 'recognised',
+          code: 'bad_args',
+          message: 'missing parameter "page"',
         },
         {
-          verb: 'gate.list',
-          answer: 'unknown-verb',
-          code: 'unknown_verb',
-          raw: null,
+          type: 'gate.list',
+          answer: 'unknown-type',
+          code: 'bad_args',
+          message: UNKNOWN_TYPE_MESSAGE,
         },
-        { verb: 'state.get', answer: 'no-reply', code: null, raw: null },
+        { type: 'state.get', answer: 'no-reply', code: null, message: null },
       ],
     });
 
-    expect(text).toContain('service.trigger  exists');
-    expect(text).toContain('gate.list        absent');
-    expect(text).toContain('state.get        unknown');
+    expect(text).toContain('settings.get  KNOWN');
+    expect(text).toContain('gate.list     absent');
+    expect(text).toContain('state.get     unknown');
+  });
+
+  it('keeps GSX its own wording, which is what says why a type was refused', () => {
+    expect(
+      report({
+        outcomes: [
+          held,
+          {
+            type: 'gate.select',
+            answer: 'recognised',
+            code: 'bad_args',
+            message: 'missing parameter "gate"',
+          },
+        ],
+      }),
+    ).toContain('missing parameter "gate"');
+  });
+
+  it('calls every verdict inconclusive when the control type was not refused', () => {
+    expect(
+      report({
+        outcomes: [
+          {
+            type: CONTROL_TYPE,
+            answer: 'recognised',
+            code: 'bad_args',
+            message: 'something else',
+          },
+        ],
+      }),
+    ).toContain('inconclusive');
+  });
+
+  it('says nothing about inconclusiveness when the control type held', () => {
+    expect(report()).not.toContain('inconclusive');
   });
 
   it('says the probes were not run rather than showing an empty table', () => {
@@ -103,8 +150,7 @@ describe('formatReport', () => {
     const lines = formatReport({
       file: 'x',
       summary: { ...summary, keys: long },
-      envelope: null,
-      outcomes: [],
+      outcomes: [held],
     });
 
     for (const line of lines) {

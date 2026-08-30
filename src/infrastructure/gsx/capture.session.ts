@@ -1,11 +1,6 @@
 import { type CaptureSink, CaptureRecorder } from './capture';
 import { GsxConnection, type SocketOpener } from './connection';
-import {
-  type Envelope,
-  type ProbeOutcome,
-  Prober,
-  ResultWaiter,
-} from './probe';
+import { type ProbeOutcome, Prober, ResultWaiter } from './probe';
 import { formatReport } from './report';
 
 export type CaptureSessionOptions = {
@@ -23,7 +18,6 @@ export class CaptureSession {
   private readonly recorder: CaptureRecorder;
   private readonly connection: GsxConnection;
 
-  private envelope: Envelope | null = null;
   private outcomes: ProbeOutcome[] = [];
 
   constructor(private readonly options: CaptureSessionOptions) {
@@ -48,16 +42,13 @@ export class CaptureSession {
       this.options.timeoutMs,
     );
 
-    this.envelope = await prober.discoverEnvelope();
-    this.outcomes =
-      this.envelope === null ? [] : await prober.run(this.envelope);
+    this.outcomes = await prober.run();
   }
 
   report(): string[] {
     return formatReport({
       file: this.options.file,
       summary: this.recorder.summary(),
-      envelope: this.envelope,
       outcomes: this.outcomes,
     });
   }

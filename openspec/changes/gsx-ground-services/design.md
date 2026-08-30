@@ -24,6 +24,23 @@ Facts that are load-bearing:
 - `handlerData` is around 1.7 MB and arrives on every connection.
 - GSX restarts its own engine routinely; the socket drops when it does.
 
+**Confirmed against the real GSX (2026-08-30, first capture run):**
+
+- The handshake is exactly as assumed. `{"v":1,"type":"hello","protocol":1,"engine":"couatl",
+  "sim":"MSFS","gsxRunning":true,"authRequired":false,"capabilities":[...]}` with all nine
+  capabilities present, including `services`, `handlerSet` and `gate`.
+- **A request carries the verb as its `type`.** There is no envelope around a verb: a message
+  with `type: "request"` and a `verb` field is refused with
+  `{"code":"bad_args","message":"unknown message type"}`. GSX dispatches on `type`, so a
+  request is `{"v":1,"type":"<verb>","id":"<id>", ...arguments}`.
+- `"unknown message type"` is therefore the sentinel for an unsupported verb, and any *other*
+  complaint is evidence that the verb is real and only its arguments were wrong.
+- **GSX pushed no state at all.** Across three connections — one with no aircraft loaded, two
+  with a flight loaded — the only unsolicited frame was the `hello`. No snapshot, no patch,
+  in ten minutes. So a snapshot does not simply follow the hello, and something must be sent
+  to ask for state. What that something is remains open; the second capture round probes for
+  it (`subscribe`, `state.get`, `get`, a client `hello`).
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -190,8 +207,11 @@ The recording becomes the fixture set. Every subsequent task is tested by replay
 
 ## Open Questions
 
-- Whether GSX exposes a verb to trigger or bypass a service. Task 1's probe answers it; no
-  requirement in this change depends on the answer.
+- Whether GSX exposes a verb to trigger or bypass a service. The second probe round answers
+  it; no requirement in this change depends on the answer.
+- **How to make GSX send state at all.** The first capture proved it sends nothing unasked.
+  Until the second round names the message that opens the feed, everything downstream of the
+  connection is unbuildable, so this is the one open question that genuinely blocks.
 - Which of `airport`, `parking`, `gateProperties` and `operators` are worth a dashboard line
   alongside the services. The capture shows what a real session carries, and the frame is
   narrow; this is a rendering choice made in task 6, not an architectural one.

@@ -9,6 +9,8 @@ export type CaptureSummary = {
   hello: string | null;
   frames: number;
   unparsed: number;
+  pushed: number;
+  types: string[];
   keys: string[];
   services: string[];
   serviceStates: string[];
@@ -21,7 +23,10 @@ export function fileSink(path: string): CaptureSink {
 export class CaptureRecorder {
   private frames = 0;
   private unparsed = 0;
+  private pushed = 0;
   private hello: string | null = null;
+
+  private readonly types = new Set<string>();
 
   private readonly keys = new Set<string>();
   private readonly services = new Set<string>();
@@ -51,6 +56,8 @@ export class CaptureRecorder {
       hello: this.hello,
       frames: this.frames,
       unparsed: this.unparsed,
+      pushed: this.pushed,
+      types: [...this.types].sort(),
       keys: [...this.keys].sort(),
       services: [...this.services].sort(),
       serviceStates: [...this.serviceStates].sort(),
@@ -62,6 +69,14 @@ export class CaptureRecorder {
 
     if (!isRecord(value)) {
       return;
+    }
+
+    if (typeof value.type === 'string') {
+      this.types.add(value.type);
+    }
+
+    if (value.type !== 'hello' && value.type !== 'result') {
+      this.pushed += 1;
     }
 
     if (value.type === 'hello') {

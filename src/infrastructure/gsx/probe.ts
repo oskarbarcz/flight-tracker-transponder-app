@@ -1,60 +1,56 @@
 import { isRecord } from './capture';
 import type { GsxFrame } from './connection';
 
-export const CONTROL_VERB = 'zzz.notaverb';
+export const UNKNOWN_TYPE_MESSAGE = 'unknown message type';
+
+export const CONTROL_TYPE = 'zzz.notatype';
 
 export const UNKNOWN_SERVICE = '__probe_no_such_service__';
 
 export const PROBE_TIMEOUT_MS = 2_000;
 
-export type ProbeArgs = Record<string, unknown>;
+export type ProbeBody = Record<string, unknown>;
 
-export type Envelope = {
-  name: string;
-  build: (id: string, verb: string, args: ProbeArgs) => Record<string, unknown>;
+export type TypeProbe = {
+  type: string;
+  body?: ProbeBody;
 };
 
-export const ENVELOPES: Envelope[] = [
-  {
-    name: 'typed',
-    build: (id, verb, args) => ({ v: 1, type: 'request', id, verb, args }),
-  },
-  {
-    name: 'bare',
-    build: (id, verb, args) => ({ v: 1, id, verb, args }),
-  },
-  {
-    name: 'verb-as-type',
-    build: (id, verb, args) => ({ v: 1, type: verb, id, ...args }),
-  },
+export const TYPE_PROBES: TypeProbe[] = [
+  { type: CONTROL_TYPE },
+  { type: 'settings.get' },
+  { type: 'state.get' },
+  { type: 'services.get' },
+  { type: 'handler.get' },
+  { type: 'gate.list' },
+  { type: 'subscribe', body: { capabilities: ['state', 'services'] } },
+  { type: 'subscribe' },
+  { type: 'hello' },
+  { type: 'ready' },
+  { type: 'ping' },
+  { type: 'get', body: { path: '/services' } },
+  { type: 'service.trigger', body: { id: UNKNOWN_SERVICE } },
+  { type: 'service.bypass', body: { id: UNKNOWN_SERVICE } },
 ];
 
-export type ProbeRequest = {
-  verb: string;
-  args: ProbeArgs;
-};
-
-export const PROBES: ProbeRequest[] = [
-  { verb: 'service.trigger', args: { id: UNKNOWN_SERVICE } },
-  { verb: 'services.trigger', args: { id: UNKNOWN_SERVICE } },
-  { verb: 'service.request', args: { id: UNKNOWN_SERVICE } },
-  { verb: 'service.bypass', args: { id: UNKNOWN_SERVICE } },
-  { verb: 'state.get', args: {} },
-  { verb: 'services.get', args: {} },
-  { verb: 'handler.get', args: {} },
-  { verb: 'gate.list', args: {} },
-];
-
-export type ProbeAnswer = 'accepted' | 'refused' | 'unknown-verb' | 'no-reply';
+export type ProbeAnswer =
+  | 'accepted'
+  | 'recognised'
+  | 'unknown-type'
+  | 'no-reply';
 
 export type ProbeOutcome = {
-  verb: string;
+  type: string;
   answer: ProbeAnswer;
   code: string | null;
-  raw: string | null;
+  message: string | null;
 };
 
 export type Sender = (payload: unknown) => void;
+
+export function requestFor(probe: TypeProbe, id: string): ProbeBody {
+  return { v: 1, type: probe.type, id, ...(probe.body ?? {}) };
+}
 
 export class ResultWaiter {
   private readonly pending = new Map<string, (frame: GsxFrame) => void>();
@@ -98,34 +94,17 @@ export class Prober {
     private readonly timeoutMs: number = PROBE_TIMEOUT_MS,
   ) {}
 
-  async discoverEnvelope(): Promise<Envelope | null> {
-    for (const envelope of ENVELOPES) {
-      const id = `probe-control-${envelope.name}`;
-
-      this.send(envelope.build(id, CONTROL_VERB, {}));
-
-      if ((await this.results.wait(id, this.timeoutMs)) !== null) {
-        return envelope;
-      }
-    }
-
-    return null;
-  }
-
-  async run(
-    envelope: Envelope,
-    probes: ProbeRequest[] = PROBES,
-  ): Promise<ProbeOutcome[]> {
+  async run(probes: TypeProbe[] = TYPE_PROBES): Promise<ProbeOutcome[]> {
     const outcomes: ProbeOutcome[] = [];
 
     for (const probe of probes) {
-      const id = `probe-${probe.verb}`;
+      const id = `probe-${probe.type}`;
 
-      this.send(envelope.build(id, probe.verb, probe.args));
+      this.send(requestFor(probe, id));
 
       const frame = await this.results.wait(id, this.timeoutMs);
 
-      outcomes.push({ verb: probe.verb, ...answerOf(frame) });
+      outcomes.push({ type: probe.type, ...answerOf(frame) });
     }
 
     return outcomes;
@@ -145,35 +124,39 @@ export function resultId(frame: GsxFrame): string | null {
 export function answerOf(frame: GsxFrame | null): {
   answer: ProbeAnswer;
   code: string | null;
-  raw: string | null;
+  message: string | null;
 } {
   if (frame === null) {
-    return { answer: 'no-reply', code: null, raw: null };
+    return { answer: 'no-reply', code: null, message: null };
   }
 
   const value = frame.value;
-  const code =
-    isRecord(value) && isRecord(value.error)
-      ? typeof value.error.code === 'string'
-        ? value.error.code
-        : null
-      : null;
 
   if (isRecord(value) && value.ok === true) {
-    return { answer: 'accepted', code: null, raw: frame.raw };
+    return { answer: 'accepted', code: null, message: null };
   }
 
+  const error = isRecord(value) && isRecord(value.error) ? value.error : null;
+  const code = typeof error?.code === 'string' ? error.code : null;
+  const message = typeof error?.message === 'string' ? error.message : null;
+
   return {
-    answer: code === 'unknown_verb' ? 'unknown-verb' : 'refused',
+    answer: message === UNKNOWN_TYPE_MESSAGE ? 'unknown-type' : 'recognised',
     code,
-    raw: frame.raw,
+    message,
   };
 }
 
-export function verbExists(outcome: ProbeOutcome): boolean | null {
+export function typeExists(outcome: ProbeOutcome): boolean | null {
   if (outcome.answer === 'no-reply') {
     return null;
   }
 
-  return outcome.answer !== 'unknown-verb';
+  return outcome.answer !== 'unknown-type';
+}
+
+export function controlHeld(outcomes: ProbeOutcome[]): boolean {
+  const control = outcomes.find((outcome) => outcome.type === CONTROL_TYPE);
+
+  return control?.answer === 'unknown-type';
 }
