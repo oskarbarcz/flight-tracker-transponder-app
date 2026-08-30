@@ -2,6 +2,9 @@ name: 'test-build'
 
 on:
   workflow_dispatch:
+  push:
+    branches: ['feature/gsx-integration']
+    paths: ['src/**', 'bin/**', 'package.json', '.github/workflows/test-build.yaml']
 
 jobs:
   executable:
