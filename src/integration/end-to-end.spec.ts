@@ -1,4 +1,4 @@
-import { StubService } from './stub-services';
+import { StubGsx, StubService } from './stub-services';
 import { SessionExpiredError } from '../application/ports/session';
 import { FlightTrackerClient } from '../infrastructure/mypreflight/client';
 import { InMemoryTokenStore } from '../infrastructure/mypreflight/token-store';
@@ -14,9 +14,12 @@ import { PositionQueue } from '../domain/position-queue';
 import { toPositionReport } from '../domain/position-report';
 import { RatePolicy } from '../domain/rate-policy';
 import type { SimSample } from '../domain/sim-sample';
-import { StatusRegistry } from '../application/status';
+import { StatusRegistry, type StatusSnapshot } from '../application/status';
 import { Logger } from '../infrastructure/logger';
 import type { Presence, PresenceWriter } from '../application/ports/presence';
+import { GsxClient } from '../infrastructure/gsx/client';
+import { GroundServicesFeed } from '../application/ground-services.feed';
+import boarding from '../infrastructure/gsx/fixtures/services-boarding.json';
 
 const FLIGHT_ID = '0f0f6b04-9a5f-4e6c-9c4e-1d2f0f38a3b1';
 
@@ -623,5 +626,123 @@ describe('ADS-B service integration', () => {
 
     expect(status.snapshot().publishedCount).toBe(1);
     expect(status.snapshot().droppedCount).toBe(1);
+  });
+});
+
+describe('reading a turnaround out of GSX and onto the dashboard', () => {
+  const drive = async (
+    script: (socket: StubGsx) => void,
+  ): Promise<StatusSnapshot[]> => {
+    const status = new StatusRegistry();
+    const logger = new Logger('error', null, 'test', () => undefined);
+    const feed = new GroundServicesFeed(status, logger);
+    const controller = new AbortController();
+    const seen: StatusSnapshot[] = [];
+
+    const client = new GsxClient(
+      {
+        host: '127.0.0.1',
+        port: 8744,
+        helloTimeoutMs: 20,
+        subscribeTimeoutMs: 20,
+        open: () => {
+          const socket = new StubGsx();
+
+          queueMicrotask(() => {
+            script(socket);
+            setImmediate(() => socket.close());
+          });
+
+          return socket;
+        },
+        sleep: () => {
+          controller.abort();
+
+          return Promise.resolve();
+        },
+      },
+      {
+        onStatus: (state) => {
+          feed.setStatus(state);
+          seen.push(status.snapshot());
+        },
+        onServices: (services) => {
+          feed.accept(services);
+          seen.push(status.snapshot());
+        },
+        onStand: (stand) => {
+          feed.setStand(stand);
+          seen.push(status.snapshot());
+        },
+      },
+    );
+
+    await client.run(controller.signal);
+
+    return seen;
+  };
+
+  const withServices = (seen: StatusSnapshot[]): StatusSnapshot | undefined =>
+    seen.filter((snapshot) => snapshot.groundServices.length > 0).at(-1);
+
+  it('shows the boarding GSX is performing, with the stand it is on', async () => {
+    const seen = await drive((socket) => {
+      socket.hello();
+      socket.push({
+        v: 1,
+        type: 'snapshot',
+        services: boarding.value,
+        parking: 'Terminal 4 - Concourse B|Gate 20A',
+        airport: { icao: 'KJFK', name: 'Kennedy Intl' },
+      });
+    });
+
+    const showing = withServices(seen);
+
+    expect(showing?.groundHandling).toBe('connected');
+    expect(showing?.stand).toEqual({
+      airport: 'KJFK',
+      parking: 'Terminal 4 - Concourse B|Gate 20A',
+    });
+    expect(
+      showing?.groundServices.find((service) => service.id === 'boarding'),
+    ).toMatchObject({
+      state: 'performing',
+      passengers: { done: 1, total: 1 },
+      cargo: [
+        { hold: 'front', unit: 'ULDs', done: 16, total: 20 },
+        { hold: 'rear', unit: 'ULDs', done: 16, total: 16 },
+      ],
+    });
+  });
+
+  it('shows only the services that are worth showing', async () => {
+    const seen = await drive((socket) => {
+      socket.hello();
+      socket.push({ v: 1, type: 'snapshot', services: boarding.value });
+    });
+
+    expect(
+      withServices(seen)
+        ?.groundServices.map((service) => service.id)
+        .sort(),
+    ).toEqual(['boarding', 'jetway']);
+  });
+
+  it('shows nothing at all when GSX cannot supply the feed', async () => {
+    const seen = await drive((socket) => socket.hello(['menu', 'gate']));
+
+    expect(seen.at(0)?.groundHandling).toBe('unsupported');
+    expect(withServices(seen)).toBeUndefined();
+  });
+
+  it('forgets the turnaround when GSX goes away', async () => {
+    const seen = await drive((socket) => {
+      socket.hello();
+      socket.push({ v: 1, type: 'snapshot', services: boarding.value });
+    });
+
+    expect(seen.at(-1)?.groundServices).toEqual([]);
+    expect(seen.at(-1)?.groundHandling).toBe('searching');
   });
 });

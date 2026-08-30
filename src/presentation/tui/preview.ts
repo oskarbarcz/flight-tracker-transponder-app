@@ -32,6 +32,43 @@ export function previewFrame(version: string): string {
   status.recordAcceptedReport(new Date(Date.UTC(2026, 7, 14, 11, 30, 30)));
   status.setDroppedCount(1);
 
+  status.setGroundHandling(
+    'connected',
+    [
+      {
+        id: 'boarding',
+        state: 'performing',
+        phase: 'front loader loading',
+        operator: null,
+        passengers: { done: 30, total: 122 },
+        bagsPercent: 40,
+        cargo: [{ hold: 'front', unit: 'ULDs', done: 16, total: 20 }],
+        fuel: null,
+      },
+      {
+        id: 'refueling',
+        state: 'performing',
+        phase: null,
+        operator: 'United Ground Express',
+        passengers: null,
+        bagsPercent: null,
+        cargo: [],
+        fuel: { loaded: 2221, aircraftTotal: 5252, unit: 'kg' },
+      },
+      {
+        id: 'jetway',
+        state: 'completed',
+        phase: 'docked',
+        operator: null,
+        passengers: null,
+        bagsPercent: null,
+        cargo: [],
+        fuel: null,
+      },
+    ],
+    { airport: 'EDDB', parking: 'Terminal 1 - A Gates|Gate A15' },
+  );
+
   status.setFault(
     'adsb',
     'The ADS-B service rejected a position report with 400: squawk must be a string',

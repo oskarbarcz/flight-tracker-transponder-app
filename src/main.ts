@@ -46,6 +46,8 @@ import { TransponderSchedule } from './domain/transponder-schedule';
 import { PositionQueue } from './domain/position-queue';
 import { RatePolicy } from './domain/rate-policy';
 import { PositionFeed } from './application/position.feed';
+import { GroundServicesFeed } from './application/ground-services.feed';
+import { GsxClient } from './infrastructure/gsx/client';
 import { PresenceFeed } from './application/presence.feed';
 import {
   PROTOCOL_NAMES,
@@ -58,6 +60,9 @@ import {
   trayTooltip,
 } from './presentation/tray/tray';
 import { openWindowsTray } from './presentation/tray/win32.tray';
+import { CAPTURE_FILE_NAME, fileSink } from './infrastructure/gsx/capture';
+import { CaptureSession } from './infrastructure/gsx/capture.session';
+import { gsxUrl } from './infrastructure/gsx/connection';
 
 const SESSION_FILE = 'session.json';
 
@@ -135,6 +140,8 @@ async function bootstrap(): Promise<void> {
     status,
     logger.child('presence'),
   );
+
+  const groundFeed = new GroundServicesFeed(status, logger.child('gsx'));
 
   if ((await tokenStore.read()) === null) {
     if (process.stdin.isTTY) {
@@ -258,6 +265,7 @@ async function bootstrap(): Promise<void> {
       );
       applyCallsign(flight?.callsign ?? null);
       applySchedule(flight?.status ?? null);
+      groundFeed.setCurrentFlight(flight?.id ?? null);
       status.set('api', 'connected');
       status.setFault('api', null);
     } catch (error) {
@@ -271,6 +279,7 @@ async function bootstrap(): Promise<void> {
         status.setService(null);
         applyCallsign(null);
         applySchedule(null);
+        groundFeed.setCurrentFlight(null);
       } else {
         status.set('api', 'disconnected');
         status.setFault('api', describeError(error));
@@ -427,6 +436,7 @@ async function bootstrap(): Promise<void> {
           .connect({
             onSample: (sample) => {
               positionFeed.accept(sample);
+              groundFeed.setOnGround(sample.isOnGround);
               void positionFeed.drain();
             },
             onAircraftIdentifier: (identifier) =>
@@ -470,6 +480,21 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+
+  if (config.gsx.enabled) {
+    supervisor.start({
+      name: 'gsx',
+      run: (signal) =>
+        new GsxClient(
+          { host: config.gsx.host, port: config.gsx.port },
+          {
+            onStatus: (gsxStatus) => groundFeed.setStatus(gsxStatus),
+            onServices: (services) => groundFeed.accept(services),
+            onStand: (stand) => groundFeed.setStand(stand),
+          },
+        ).run(signal),
+    });
+  }
 
   supervisor.start({
     name: 'current-flight',
@@ -624,6 +649,68 @@ async function trayCheck(): Promise<void> {
   process.exit(0);
 }
 
+async function gsxCapture(): Promise<void> {
+  loadEnvFiles(envFilePaths());
+
+  const storage = resolveStorage(appDirectory(), process.env.DATA_DIR);
+  const file = join(storage.directory, CAPTURE_FILE_NAME);
+  const say = (line: string): void => {
+    process.stdout.write(`${line}\n`);
+  };
+
+  if (!storage.writable) {
+    process.stderr.write(`cannot write to ${storage.directory}\n`);
+    process.exit(1);
+  }
+
+  const config = loadConfig(process.env, storage.directory);
+  const url = gsxUrl(config.gsx.host, config.gsx.port);
+
+  const session = new CaptureSession({
+    url,
+    file,
+    sink: fileSink(file),
+    onClosed: (reason) =>
+      say(`GSX closed the connection${reason === '' ? '' : `: ${reason}`}`),
+  });
+
+  try {
+    await session.start();
+  } catch (error: unknown) {
+    process.stderr.write(`${describeError(error)}\n`);
+    process.exit(1);
+  }
+
+  say(`connected to GSX at ${url}`);
+  say(`recording to ${file}`);
+  say('subscribing, probing, then recording until you press Ctrl+C');
+  say('');
+
+  const subscription = await session.subscribe();
+
+  say(`subscribe: ${subscription.message ?? subscription.answer}`);
+
+  await session.probe();
+
+  for (const line of session.report()) {
+    say(line);
+  }
+
+  const finish = (): void => {
+    session.stop();
+    say('');
+
+    for (const line of session.report()) {
+      say(line);
+    }
+
+    process.exit(0);
+  };
+
+  process.on('SIGINT', finish);
+  process.on('SIGTERM', finish);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -636,6 +723,8 @@ if (process.argv.includes('--version')) {
   void fetchRelease();
 } else if (process.argv.includes('--tray-check')) {
   void trayCheck();
+} else if (process.argv.includes('--gsx-capture')) {
+  void useUtf8Console(process.platform).then(() => gsxCapture());
 } else if (process.argv.includes('--print-frame')) {
   void useUtf8Console(process.platform).then(() => {
     process.stdout.write(`${previewFrame(version())}\n`);

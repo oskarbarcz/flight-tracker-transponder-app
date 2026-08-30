@@ -22,6 +22,7 @@ experience, integrate with SimBrief and other tools. Check out our homepage at [
 **This module** is the part running on your PC. It does things, that our servers cannot:
 - reads your aircraft position and feeds it to our service, so you see your flight progress anywhere you are,
 - sets your Discord rich presence, so your friends can be briefed on the flight you are commencing,
+- reads the ground services running on your aircraft from GSX Pro, if you have it,
 - connects with your printer, allowing you to print flight documents with real hardware.
 
 [![integrity][ci-badge]][ci-url]
@@ -102,7 +103,8 @@ Start a flight in the platform first. The callsign comes from that flight, so
 nothing is published without one.
 
 The dashboard has five sections: who is signed in, the current flight, the
-transponder, Discord, and the state of both services.
+transponder, Discord, and the state of both services. A sixth appears while
+GSX is working your aircraft.
 
 ```
 ╭─ 3 XPNDR ─────────────────╮╭─ 4 COMMS ─────────────────────────────────────╮
@@ -115,6 +117,33 @@ transponder, Discord, and the state of both services.
 │ call:     11:30:30z       ││                                               │
 ╰───────────────────────────╯╰───────────────────────────────────────────────╯
 ```
+
+### Ground services, if you have GSX
+
+If [GSX Pro][gsx-url] is running, the app reads the turnaround from it and shows
+what is happening on the dashboard: who is boarding, how many are aboard, how the
+holds are filling, how much fuel has gone in.
+
+```
+╭─ 6 GROUND ────────────────────────────────────────────────────────────────╮
+│ EDDB · Gate A15                                                           │
+│ boarding   [RUNNING]    30/122 pax · bags 40% · front 16/20 ULDs           │
+│ refueling  [RUNNING]    2221 kg loaded                                     │
+│ jetway     [DONE]       docked                                             │
+╰───────────────────────────────────────────────────────────────────────────╯
+```
+
+It is entirely optional and it reads only — nothing is ever sent to GSX, and no
+service is requested, bypassed or cancelled on your behalf. If GSX is not
+installed the section simply never appears and nothing reports a fault.
+
+The app looks for GSX on this machine every twenty seconds, so starting GSX after
+the app, or restarting it mid-flight, is picked up on its own. It needs a GSX new
+enough to advertise its service feed; an older one connects and says so rather
+than showing half a turnaround.
+
+Set `GSX_ENABLED=false` to switch the whole thing off, or `GSX_HOST` and
+`GSX_PORT` if GSX runs on a different machine from the app.
 
 ### The transponder switches itself
 
@@ -221,6 +250,7 @@ not be used for real-world aviation operations.
 [web-badge]: https://img.shields.io/badge/barcz.me-4A5568?style=for-the-badge&logo=googlechrome&logoColor=white
 [web-url]: https://barcz.me
 
+[gsx-url]: https://www.fsdreamteam.com/products_gsxpro.html
 [banner]: .github/assets/background.png
 [homepage]: https://mypreflight.io
 [ci-badge]: https://img.shields.io/github/actions/workflow/status/mypreflight/transponder-app/integrity.yaml?branch=main&style=for-the-badge&label=integrity

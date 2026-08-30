@@ -109,3 +109,51 @@ function readBody(request: IncomingMessage): Promise<string> {
     request.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
   });
 }
+
+export type GsxSocketEventType = 'open' | 'message' | 'close' | 'error';
+
+export type GsxSocketEvent = { data?: unknown; reason?: string };
+
+export class StubGsx {
+  readonly sent: Record<string, unknown>[] = [];
+
+  private readonly listeners = new Map<
+    GsxSocketEventType,
+    ((event: GsxSocketEvent) => void)[]
+  >();
+
+  addEventListener(
+    type: GsxSocketEventType,
+    listener: (event: GsxSocketEvent) => void,
+  ): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  send(data: string): void {
+    const message = JSON.parse(data) as Record<string, unknown>;
+    this.sent.push(message);
+
+    if (message.type === 'subscribe') {
+      this.push({ v: 1, type: 'result', id: message.id, ok: true });
+    }
+  }
+
+  close(): void {
+    this.emit('close', { reason: 'closed' });
+  }
+
+  emit(type: GsxSocketEventType, event: GsxSocketEvent = {}): void {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(event);
+    }
+  }
+
+  push(value: unknown): void {
+    this.emit('message', { data: JSON.stringify(value) });
+  }
+
+  hello(capabilities: string[] = ['state', 'services', 'menu', 'gate']): void {
+    this.emit('open');
+    this.push({ v: 1, type: 'hello', gsxRunning: true, capabilities });
+  }
+}

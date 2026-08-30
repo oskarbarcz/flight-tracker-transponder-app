@@ -1,3 +1,6 @@
+import type { GroundService } from '../domain/ground-services';
+import type { GroundHandlingStatus, Stand } from './ports/ground-services';
+
 export type ConnectionName = 'simulator' | 'discord' | 'adsb' | 'api';
 
 export type ConnectionState =
@@ -53,6 +56,9 @@ export type StatusSnapshot = {
   droppedCount: number;
   presenceState: string | null;
   presenceDetails: string | null;
+  groundHandling: GroundHandlingStatus;
+  groundServices: GroundService[];
+  stand: Stand;
 };
 
 const CONNECTIONS: ConnectionName[] = ['simulator', 'discord', 'adsb', 'api'];
@@ -93,6 +99,9 @@ export class StatusRegistry {
   private droppedCount = 0;
   private presenceState: string | null = null;
   private presenceDetails: string | null = null;
+  private groundHandling: GroundHandlingStatus = 'searching';
+  private groundServices: GroundService[] = [];
+  private stand: Stand = { airport: null, parking: null };
 
   set(name: ConnectionName, state: ConnectionState): void {
     this.connections.set(name, state);
@@ -158,6 +167,16 @@ export class StatusRegistry {
     this.droppedCount = count;
   }
 
+  setGroundHandling(
+    status: GroundHandlingStatus,
+    services: GroundService[],
+    stand: Stand,
+  ): void {
+    this.groundHandling = status;
+    this.groundServices = services;
+    this.stand = stand;
+  }
+
   setPresence(state: string | null, details: string | null): void {
     this.presenceState = state;
     this.presenceDetails = details;
@@ -191,6 +210,9 @@ export class StatusRegistry {
       droppedCount: this.droppedCount,
       presenceState: this.presenceState,
       presenceDetails: this.presenceDetails,
+      groundHandling: this.groundHandling,
+      groundServices: this.groundServices,
+      stand: this.stand,
     };
   }
 
