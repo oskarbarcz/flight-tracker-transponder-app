@@ -11,9 +11,9 @@ jobs:
     runs-on: 'windows-2025'
     steps:
       - name: 'Checkout repository'
-        uses: 'actions/checkout@v6'
+        uses: 'actions/checkout@v7'
       - name: 'Set up Node'
-        uses: 'actions/setup-node@v4'
+        uses: 'actions/setup-node@v7'
         with:
           node-version: '26'
           cache: 'npm'
@@ -31,9 +31,9 @@ jobs:
         shell: 'pwsh'
         run: './scripts/smoke-test.ps1'
       - name: 'Upload the executable as an artifact'
-        uses: 'actions/upload-artifact@v4'
+        uses: 'actions/upload-artifact@v7'
         with:
-          name: "mypreflight-transponder-${{ github.ref_name }}-${{ github.sha }}"
+          name: "mypreflight-transponder-${{ github.sha }}"
           path: 'dist/mypreflight-transponder.exe'
           retention-days: 14
           if-no-files-found: 'error'
