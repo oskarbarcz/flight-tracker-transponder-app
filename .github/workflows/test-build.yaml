@@ -1,0 +1,36 @@
+name: 'test-build'
+
+on:
+  workflow_dispatch:
+
+jobs:
+  executable:
+    runs-on: 'windows-2025'
+    steps:
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@v6'
+      - name: 'Set up Node'
+        uses: 'actions/setup-node@v4'
+        with:
+          node-version: '26'
+          cache: 'npm'
+      - name: 'Set up Bun'
+        uses: 'oven-sh/setup-bun@v2'
+        with:
+          bun-version: 'latest'
+      - name: 'Install dependencies'
+        run: 'npm ci'
+      - name: 'Compile the Windows executable'
+        run: 'npm run build:exe'
+        env:
+          ADSB_CLIENT_TOKEN: ${{ secrets.ADSB_CLIENT_TOKEN }}
+      - name: 'Smoke test the executable'
+        shell: 'pwsh'
+        run: './scripts/smoke-test.ps1'
+      - name: 'Upload the executable as an artifact'
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: "mypreflight-transponder-${{ github.ref_name }}-${{ github.sha }}"
+          path: 'dist/mypreflight-transponder.exe'
+          retention-days: 14
+          if-no-files-found: 'error'

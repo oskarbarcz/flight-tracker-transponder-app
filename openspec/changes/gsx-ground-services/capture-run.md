@@ -1,0 +1,73 @@
+# Running the GSX capture
+
+One run on the simulator PC produces the recording every later task is tested against. It is
+worth doing carefully, because the point is not to need a second one.
+
+## Getting the build
+
+Run the **test-build** workflow on this branch (Actions → test-build → Run workflow →
+`feature/gsx-integration`). It compiles the Windows executable and attaches it as an artifact
+named `mypreflight-transponder-<branch>-<sha>`. Download it, unzip it, and put
+`mypreflight-transponder.exe` in a folder of its own — the capture is written next to the
+executable, so do not run it from `Downloads`.
+
+## What to run
+
+```
+mypreflight-transponder.exe --gsx-capture
+```
+
+It connects to GSX at `127.0.0.1:8744`, probes the interface once, prints a summary, and then
+records until you press Ctrl+C — which prints the summary again, covering everything recorded.
+
+If GSX is on another machine, set `GSX_HOST` (and `GSX_PORT` if it is not 8744) before
+running.
+
+## What it does, and what it does not
+
+It records. The probes it sends are inert by construction: every probe either reads something,
+or names a service id GSX cannot have (`__probe_no_such_service__`), so a verb that turns out
+to exist answers `not_found` rather than actually starting a service. No menu entry is ever
+picked, at any index.
+
+Even so, run it **parked at a gate in a throwaway session** rather than during a flight you
+care about.
+
+## The runs to make
+
+**Run 1 — a turnaround.** Start GSX, then start the capture, then work a normal turnaround.
+Ideally an arrival with deboarding, then a departure: catering, refuel, boarding, GPU, stairs
+or jetway, and pushback at the end. The more services that actually run, the more of the
+protocol is pinned down. Ctrl+C when the pushback finishes.
+
+**Run 2 — a late start.** A short one. Start the capture *before* GSX, wait for it to say it
+cannot reach GSX, then start GSX and confirm it connects on its own. Ctrl+C after a minute.
+
+Keep the two `gsx-capture.jsonl` files separate — the second will overwrite the first if both
+run in the same folder, so rename the first before the second run.
+
+## What to send back
+
+- Both `gsx-capture.jsonl` files, zipped.
+- The console summary block, copied and pasted (it is small, and it is the part that settles
+  the probe answers).
+
+## What the summary is telling us
+
+```
+hello       the capabilities this GSX advertises — the whole feature-detection story
+keys        which top-level parts of GSX's state actually arrived
+services    the service ids this GSX publishes
+states      every state value seen across the session
+envelope    which request shape GSX answered — if this says "none answered",
+            the probe results below mean nothing
+probes      exists / absent per verb. "exists" on service.trigger would mean a
+            later change can drive GSX directly instead of walking its menu
+```
+
+## If it will not connect
+
+`--gsx-capture` fails immediately when GSX is not there, rather than retrying — that is
+deliberate for this mode. Check GSX is running, and that its remote server is enabled:
+GSX Settings → Network → Remote control server (on by default since 4.0.7). The Network tab
+also shows the address and port GSX is actually listening on.

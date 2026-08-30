@@ -58,6 +58,9 @@ import {
   trayTooltip,
 } from './presentation/tray/tray';
 import { openWindowsTray } from './presentation/tray/win32.tray';
+import { CAPTURE_FILE_NAME, fileSink } from './infrastructure/gsx/capture';
+import { CaptureSession } from './infrastructure/gsx/capture.session';
+import { gsxUrl } from './infrastructure/gsx/connection';
 
 const SESSION_FILE = 'session.json';
 
@@ -624,6 +627,64 @@ async function trayCheck(): Promise<void> {
   process.exit(0);
 }
 
+async function gsxCapture(): Promise<void> {
+  loadEnvFiles(envFilePaths());
+
+  const storage = resolveStorage(appDirectory(), process.env.DATA_DIR);
+  const file = join(storage.directory, CAPTURE_FILE_NAME);
+  const say = (line: string): void => {
+    process.stdout.write(`${line}\n`);
+  };
+
+  if (!storage.writable) {
+    process.stderr.write(`cannot write to ${storage.directory}\n`);
+    process.exit(1);
+  }
+
+  const config = loadConfig(process.env, storage.directory);
+  const url = gsxUrl(config.gsx.host, config.gsx.port);
+
+  const session = new CaptureSession({
+    url,
+    file,
+    sink: fileSink(file),
+    onClosed: (reason) =>
+      say(`GSX closed the connection${reason === '' ? '' : `: ${reason}`}`),
+  });
+
+  try {
+    await session.start();
+  } catch (error: unknown) {
+    process.stderr.write(`${describeError(error)}\n`);
+    process.exit(1);
+  }
+
+  say(`connected to GSX at ${url}`);
+  say(`recording to ${file}`);
+  say('probing the interface, then recording until you press Ctrl+C');
+  say('');
+
+  await session.probe();
+
+  for (const line of session.report()) {
+    say(line);
+  }
+
+  const finish = (): void => {
+    session.stop();
+    say('');
+
+    for (const line of session.report()) {
+      say(line);
+    }
+
+    process.exit(0);
+  };
+
+  process.on('SIGINT', finish);
+  process.on('SIGTERM', finish);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -636,6 +697,8 @@ if (process.argv.includes('--version')) {
   void fetchRelease();
 } else if (process.argv.includes('--tray-check')) {
   void trayCheck();
+} else if (process.argv.includes('--gsx-capture')) {
+  void useUtf8Console(process.platform).then(() => gsxCapture());
 } else if (process.argv.includes('--print-frame')) {
   void useUtf8Console(process.platform).then(() => {
     process.stdout.write(`${previewFrame(version())}\n`);

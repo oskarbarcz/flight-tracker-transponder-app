@@ -117,4 +117,47 @@ describe('loadConfig', () => {
     expect(config.presencePollIntervalMs).toBe(15_000);
     expect(config.queueCapacity).toBe(360);
   });
+  it('looks for GSX on the local machine, with nothing configured', () => {
+    expect(loadConfig({}).gsx).toEqual({
+      enabled: true,
+      host: BUILT_IN.gsxHost,
+      port: BUILT_IN.gsxPort,
+    });
+  });
+
+  it('points GSX at the machine running the simulator', () => {
+    expect(
+      loadConfig({ ...minimal, GSX_HOST: 'sim.lan', GSX_PORT: '9001' }).gsx,
+    ).toMatchObject({ host: 'sim.lan', port: 9001 });
+  });
+
+  it('falls back to the built-in GSX endpoint when it is unusable', () => {
+    expect(
+      loadConfig({ ...minimal, GSX_HOST: '   ', GSX_PORT: 'nowhere' }).gsx,
+    ).toMatchObject({ host: BUILT_IN.gsxHost, port: BUILT_IN.gsxPort });
+  });
+
+  it.each(['false', '0', 'off', 'no', 'FALSE', ' Off '])(
+    'switches the GSX integration off for %s',
+    (value) => {
+      expect(loadConfig({ ...minimal, GSX_ENABLED: value }).gsx.enabled).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each(['true', '1', 'on', 'yes', ''])(
+    'leaves the GSX integration on for %s',
+    (value) => {
+      expect(loadConfig({ ...minimal, GSX_ENABLED: value }).gsx.enabled).toBe(
+        true,
+      );
+    },
+  );
+
+  it('leaves the GSX integration on when the switch is not a switch', () => {
+    expect(loadConfig({ ...minimal, GSX_ENABLED: 'perhaps' }).gsx.enabled).toBe(
+      true,
+    );
+  });
 });

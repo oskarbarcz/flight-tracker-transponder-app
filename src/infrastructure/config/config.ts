@@ -1,6 +1,13 @@
 import { resolve } from 'node:path';
+import { GSX_HOST, GSX_PORT } from '../gsx/connection';
 
 export type SimConnectRemote = {
+  host: string;
+  port: number;
+};
+
+export type GsxEndpoint = {
+  enabled: boolean;
   host: string;
   port: number;
 };
@@ -10,6 +17,7 @@ export type Config = {
   adsbBaseUrl: string;
   discordApplicationId: string;
   simConnectRemote: SimConnectRemote | null;
+  gsx: GsxEndpoint;
   presencePollIntervalMs: number;
   currentFlightPollIntervalMs: number;
   versionPollIntervalMs: number;
@@ -25,7 +33,13 @@ export const BUILT_IN = {
   apiBaseUrl: 'https://api.mypreflight.io',
   adsbBaseUrl: 'https://adsb.mypreflight.io',
   discordApplicationId: '1536756124894629970',
+  gsxHost: GSX_HOST,
+  gsxPort: GSX_PORT,
 };
+
+const OFF = ['false', '0', 'off', 'no'];
+
+const ON = ['true', '1', 'on', 'yes'];
 
 export const LOG_FILE_NAME = 'mypreflight-transponder.log';
 
@@ -52,6 +66,7 @@ export function loadConfig(
       BUILT_IN.discordApplicationId,
     ),
     simConnectRemote: simConnectRemote(env),
+    gsx: gsxEndpoint(env),
     presencePollIntervalMs: number(
       env.PRESENCE_POLL_INTERVAL_MS,
       DEFAULTS.presencePollIntervalMs,
@@ -82,6 +97,28 @@ function simConnectRemote(env: NodeJS.ProcessEnv): SimConnectRemote | null {
   }
 
   return { host, port: number(env.SIMCONNECT_PORT, 500) };
+}
+
+function gsxEndpoint(env: NodeJS.ProcessEnv): GsxEndpoint {
+  return {
+    enabled: flag(env.GSX_ENABLED, true),
+    host: text(env.GSX_HOST, BUILT_IN.gsxHost),
+    port: number(env.GSX_PORT, BUILT_IN.gsxPort),
+  };
+}
+
+function flag(value: string | undefined, fallback: boolean): boolean {
+  const trimmed = value?.trim().toLowerCase() ?? '';
+
+  if (OFF.includes(trimmed)) {
+    return false;
+  }
+
+  if (ON.includes(trimmed)) {
+    return true;
+  }
+
+  return fallback;
 }
 
 function text(value: string | undefined, fallback: string): string {
