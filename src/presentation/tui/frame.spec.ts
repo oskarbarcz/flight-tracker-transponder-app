@@ -474,6 +474,129 @@ function title(
   return renderTitle(status.snapshot());
 }
 
+function boarding(status: StatusRegistry): void {
+  status.setGroundHandling(
+    'connected',
+    [
+      {
+        id: 'boarding',
+        state: 'performing',
+        phase: 'front loader loading',
+        operator: null,
+        passengers: { done: 30, total: 122 },
+        bagsPercent: 40,
+        cargo: [{ hold: 'front', unit: 'ULDs', done: 16, total: 20 }],
+        fuel: null,
+      },
+      {
+        id: 'jetway',
+        state: 'completed',
+        phase: 'docked',
+        operator: null,
+        passengers: null,
+        bagsPercent: null,
+        cargo: [],
+        fuel: null,
+      },
+    ],
+    { airport: 'EDDB', parking: 'Terminal 1 - A Gates|Gate A15' },
+  );
+}
+
+describe('the ground services section', () => {
+  it('is not drawn at all when GSX has reported nothing', () => {
+    expect(plain(80)).not.toContain('GROUND');
+  });
+
+  it('is not drawn when GSX is connected but every service is merely offered', () => {
+    expect(
+      plain(80, (status) =>
+        status.setGroundHandling('connected', [], {
+          airport: 'EDDB',
+          parking: 'Gate A15',
+        }),
+      ),
+    ).not.toContain('GROUND');
+  });
+
+  it('names each service, its state and its progress on one line', () => {
+    const drawn = plain(80, boarding);
+
+    expect(drawn).toContain('GROUND');
+    expect(drawn).toMatch(/boarding\s+\[RUNNING\]\s+30\/122 pax/);
+    expect(drawn).toContain('bags 40%');
+    expect(drawn).toContain('front 16/20 ULDs');
+  });
+
+  it('draws a service with no progress as its state alone, with no empty filler', () => {
+    expect(plain(80, boarding)).toMatch(/jetway\s+\[DONE\]\s+docked/);
+  });
+
+  it('shows the stand GSX reports, without the terminal it is buried in', () => {
+    const drawn = plain(80, boarding);
+
+    expect(drawn).toContain('EDDB · Gate A15');
+    expect(drawn).not.toContain('Terminal 1 - A Gates');
+  });
+
+  it('leaves the stand line out when GSX has not named one', () => {
+    const drawn = plain(80, (status) => {
+      boarding(status);
+      status.setGroundHandling('connected', status.snapshot().groundServices, {
+        airport: null,
+        parking: null,
+      });
+    });
+
+    expect(drawn).toContain('boarding');
+    expect(drawn).not.toContain('·  ');
+  });
+
+  it('tells the states apart without any colour at all', () => {
+    const drawn = plain(80, boarding);
+
+    expect(drawn).toContain('[RUNNING]');
+    expect(drawn).toContain('[DONE]');
+  });
+
+  it('keeps every line exactly as wide as the terminal', () => {
+    for (const line of frame(80, boarding).filter((line) => line !== '')) {
+      expect(visibleWidth(line)).toBe(80);
+    }
+  });
+
+  it('stays inside the narrowest terminal it supports', () => {
+    for (const line of frame(24, boarding)) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(24);
+    }
+  });
+
+  it('truncates a long detail rather than spilling out of the box', () => {
+    const drawn = frame(40, (status) =>
+      status.setGroundHandling(
+        'connected',
+        [
+          {
+            id: 'boarding',
+            state: 'performing',
+            phase: 'x'.repeat(300),
+            operator: null,
+            passengers: null,
+            bagsPercent: null,
+            cargo: [],
+            fuel: null,
+          },
+        ],
+        { airport: null, parking: null },
+      ),
+    );
+
+    for (const line of drawn.filter((line) => line !== '')) {
+      expect(visibleWidth(line)).toBe(40);
+    }
+  });
+});
+
 describe('renderTitle', () => {
   it('leads with whatever is broken', () => {
     expect(title()).toBe('simulator disconnected · MyPreflight');

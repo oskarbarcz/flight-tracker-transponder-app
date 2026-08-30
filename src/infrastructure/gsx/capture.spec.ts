@@ -74,19 +74,21 @@ describe('CaptureRecorder', () => {
     );
   });
 
-  it('collects the top-level keys a snapshot carries', () => {
+  it('collects the top-level keys a snapshot carries, and not the envelope around them', () => {
     const { recorder: capture } = recorder();
 
     capture.record(
-      frame({ type: 'snapshot', services: [], airport: {}, parking: '' }),
+      frame({
+        v: 1,
+        type: 'snapshot',
+        ts: 1788122080,
+        services: [],
+        airport: {},
+        parking: '',
+      }),
     );
 
-    expect(capture.summary().keys).toEqual([
-      'airport',
-      'parking',
-      'services',
-      'type',
-    ]);
+    expect(capture.summary().keys).toEqual(['airport', 'parking', 'services']);
   });
 
   it('collects the key a patch addresses', () => {

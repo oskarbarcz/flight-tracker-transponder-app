@@ -46,6 +46,8 @@ import { TransponderSchedule } from './domain/transponder-schedule';
 import { PositionQueue } from './domain/position-queue';
 import { RatePolicy } from './domain/rate-policy';
 import { PositionFeed } from './application/position.feed';
+import { GroundServicesFeed } from './application/ground-services.feed';
+import { GsxClient } from './infrastructure/gsx/client';
 import { PresenceFeed } from './application/presence.feed';
 import {
   PROTOCOL_NAMES,
@@ -138,6 +140,8 @@ async function bootstrap(): Promise<void> {
     status,
     logger.child('presence'),
   );
+
+  const groundFeed = new GroundServicesFeed(status, logger.child('gsx'));
 
   if ((await tokenStore.read()) === null) {
     if (process.stdin.isTTY) {
@@ -261,6 +265,7 @@ async function bootstrap(): Promise<void> {
       );
       applyCallsign(flight?.callsign ?? null);
       applySchedule(flight?.status ?? null);
+      groundFeed.setCurrentFlight(flight?.id ?? null);
       status.set('api', 'connected');
       status.setFault('api', null);
     } catch (error) {
@@ -274,6 +279,7 @@ async function bootstrap(): Promise<void> {
         status.setService(null);
         applyCallsign(null);
         applySchedule(null);
+        groundFeed.setCurrentFlight(null);
       } else {
         status.set('api', 'disconnected');
         status.setFault('api', describeError(error));
@@ -430,6 +436,7 @@ async function bootstrap(): Promise<void> {
           .connect({
             onSample: (sample) => {
               positionFeed.accept(sample);
+              groundFeed.setOnGround(sample.isOnGround);
               void positionFeed.drain();
             },
             onAircraftIdentifier: (identifier) =>
@@ -473,6 +480,21 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+
+  if (config.gsx.enabled) {
+    supervisor.start({
+      name: 'gsx',
+      run: (signal) =>
+        new GsxClient(
+          { host: config.gsx.host, port: config.gsx.port },
+          {
+            onStatus: (gsxStatus) => groundFeed.setStatus(gsxStatus),
+            onServices: (services) => groundFeed.accept(services),
+            onStand: (stand) => groundFeed.setStand(stand),
+          },
+        ).run(signal),
+    });
+  }
 
   supervisor.start({
     name: 'current-flight',
@@ -661,8 +683,12 @@ async function gsxCapture(): Promise<void> {
 
   say(`connected to GSX at ${url}`);
   say(`recording to ${file}`);
-  say('probing the interface, then recording until you press Ctrl+C');
+  say('subscribing, probing, then recording until you press Ctrl+C');
   say('');
+
+  const subscription = await session.subscribe();
+
+  say(`subscribe: ${subscription.message ?? subscription.answer}`);
 
   await session.probe();
 

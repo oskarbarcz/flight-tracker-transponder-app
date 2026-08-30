@@ -35,11 +35,38 @@ Facts that are load-bearing:
   request is `{"v":1,"type":"<verb>","id":"<id>", ...arguments}`.
 - `"unknown message type"` is therefore the sentinel for an unsupported verb, and any *other*
   complaint is evidence that the verb is real and only its arguments were wrong.
-- **GSX pushed no state at all.** Across three connections — one with no aircraft loaded, two
-  with a flight loaded — the only unsolicited frame was the `hello`. No snapshot, no patch,
-  in ten minutes. So a snapshot does not simply follow the hello, and something must be sent
-  to ask for state. What that something is remains open; the second capture round probes for
-  it (`subscribe`, `state.get`, `get`, a client `hello`).
+- **A snapshot does NOT follow the hello. The client must `subscribe` first.** Across three
+  connections the only unsolicited frame was the `hello`; sending
+  `{"v":1,"type":"subscribe","id":"..."}` is accepted and GSX then pushes its whole state and
+  keeps it current. This contradicts the reference implementation's notes, and it is the one
+  step without which nothing else works.
+- **Frame types seen on the wire:** `hello`, `snapshot`, `patch`, `result`, and `event`.
+- **All twelve services are published, under exactly the expected ids** — `Boarding`,
+  `Catering`, `Cleaning`, `DeIce`, `Deboarding`, `Departure`, `GPU`, `Lavatory`,
+  `OperateJetways`, `OperateStairs`, `Refueling`, `Water`. States observed live:
+  `available`, `performing`, `completed`.
+- **Top-level state keys, as published:** `aircraft`, `airline`, `airport`, `billing`,
+  `commandIcons`, `commandIconsSvg`, `gateProperties`, `handlerData`, `menu`, `menuShown`,
+  `message`, `parking`, `search`, `services`, `settings`, `simbrief`, `startup`, `state`,
+  `stateText`, `statusHtml`. Note `commandIcons`/`commandIconsSvg`/`statusHtml` are not in the
+  reference notes and are icon and markup payloads this change discards; `operators`,
+  `prompt` and `receipt` did not appear in this session.
+- **`service.trigger` and `service.bypass` drew no reply at all** — neither accepted nor
+  refused as an unknown type. Still unresolved, and nothing here depends on it.
+- **A patch addresses one top-level key with a leading slash**, and GSX resends the whole
+  value under it. Over one boarding: `/services` 352 times, `/statusHtml` 352, `/billing` 347,
+  `/message` 29, `/menu` 14, `/settings` 14, `/menuShown` 7, and one patch each for `/state`,
+  `/stateText`, `/airport`, `/parking`, `/gateProperties`, `/aircraft`, `/airline`,
+  `/commandIcons`, `/commandIconsSvg`, `/simbrief`, `/search`, `/startup`. So the ~1 Hz
+  service cadence is real, and the identity keys are written once at subscribe and then stay
+  put.
+- **An `event` frame carries a `topic` and a `model`**, not loose fields:
+  `{"v":1,"type":"event","ts":...,"topic":"startup","model":{"active":false,"bars":[],"sid":...}}`.
+- **GSX emits keys differing only in case within one object** — `PushBack` and `pushback` were
+  seen together. `JSON.parse` is case-sensitive so this costs the app nothing, but it does
+  mean GSX's payloads cannot be round-tripped through a case-insensitive parser (Windows
+  PowerShell's `ConvertFrom-Json` refuses them outright), which matters for any tooling built
+  around a capture.
 
 ## Goals / Non-Goals
 
@@ -96,6 +123,25 @@ passed through. The infrastructure layer never hands GSX's own strings upward.
 *Alternative considered:* carrying GSX's shape through to the dashboard. Rejected — it puts a
 third-party product's vocabulary in the app's core and in whatever payload the tracker API
 eventually takes.
+
+### The service row, as GSX actually publishes it
+
+Confirmed from a live boarding (`fixtures/services-boarding.json`). Three corrections to what
+the reference notes said:
+
+- **The phase field is `detail.phase`, not `detail.busPhase`.** It is free text describing
+  whatever equipment is in play — `"front loader loading, front train approaching"`, `"docked"`
+  — not a bus-specific enumeration.
+- **`detail.cargo` is an array of holds, and the reference does not mention it at all.** Each
+  entry is `{hold, unit, done, total, trip?, trips?, train?}`, e.g. front hold 16/20 ULDs on
+  train 5 of 5. It sits alongside `bagsPercent`, which stays a single percentage.
+- **`operator` is absent on every row in the captured session.** The reference showed it
+  populated, so it is optional and the model must not require it.
+
+Everything else held: `id`, `displayName`, `state` with `stateRaw` (1 available, 5 performing,
+6 completed), `stateText`, `icon`, `canTrigger`, `canBypass`, `statusText` with embedded
+newlines, and `progressText`. Fuel detail was not observed — refuelling never ran — so
+`detail.fuel` remains the one shape taken on trust.
 
 ### `detail.pax`, never `progress`
 
@@ -209,9 +255,10 @@ The recording becomes the fixture set. Every subsequent task is tested by replay
 
 - Whether GSX exposes a verb to trigger or bypass a service. The second probe round answers
   it; no requirement in this change depends on the answer.
-- **How to make GSX send state at all.** The first capture proved it sends nothing unasked.
-  Until the second round names the message that opens the feed, everything downstream of the
-  connection is unbuildable, so this is the one open question that genuinely blocks.
+- Whether `subscribe` accepts a `capabilities` list that actually narrows what GSX pushes. A
+  bare `subscribe` and one carrying `capabilities` were both accepted, and the full state
+  arrived either way; the capture cannot tell which of the two produced it. Narrowing would
+  only save bandwidth on a loopback socket, so the client subscribes bare.
 - Which of `airport`, `parking`, `gateProperties` and `operators` are worth a dashboard line
   alongside the services. The capture shows what a real session carries, and the frame is
   narrow; this is a rendering choice made in task 6, not an architectural one.

@@ -4,7 +4,12 @@ import type {
   GsxSocketEvent,
   GsxSocketEventType,
 } from './connection';
-import { CONTROL_TYPE, TYPE_PROBES, UNKNOWN_TYPE_MESSAGE } from './probe';
+import {
+  CONTROL_TYPE,
+  SUBSCRIBE_ID,
+  TYPE_PROBES,
+  UNKNOWN_TYPE_MESSAGE,
+} from './probe';
 
 class FakeGsx implements GsxSocket {
   readonly sent: Record<string, unknown>[] = [];
@@ -160,6 +165,55 @@ describe('CaptureSession', () => {
     expect(capture.report().join('\n')).toContain(
       'GSX sent no state of its own',
     );
+  });
+
+  it("subscribes before anything else, which is what opens GSX's feed", async () => {
+    const socket = new FakeGsx(() => null);
+    const { session: capture } = session(socket);
+    const starting = capture.start();
+
+    socket.emit('open');
+    await starting;
+
+    const subscribing = capture.subscribe();
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        v: 1,
+        type: 'result',
+        id: SUBSCRIBE_ID,
+        ok: true,
+      }),
+    });
+
+    await expect(subscribing).resolves.toMatchObject({
+      type: 'subscribe',
+      answer: 'accepted',
+    });
+    expect(socket.sent[0]).toEqual({
+      v: 1,
+      type: 'subscribe',
+      id: SUBSCRIBE_ID,
+    });
+  });
+
+  it('reports the subscription alongside the probes', async () => {
+    const socket = new FakeGsx(() => UNKNOWN_TYPE_MESSAGE);
+    const { session: capture } = session(socket);
+    const starting = capture.start();
+
+    socket.emit('open');
+    await starting;
+    await capture.subscribe();
+    await capture.probe();
+
+    expect(capture.report().join('\n')).toContain('subscribe');
+  });
+
+  it('never asks GSX to stop sending, which would end the recording', () => {
+    for (const probe of TYPE_PROBES) {
+      expect(probe.type).not.toBe('unsubscribe');
+    }
   });
 
   it('closes the socket when it is stopped', async () => {

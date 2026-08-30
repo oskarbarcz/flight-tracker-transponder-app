@@ -87,7 +87,9 @@ export class CaptureRecorder {
 
     if (value.type === 'snapshot') {
       for (const key of Object.keys(value)) {
-        this.keys.add(key);
+        if (!ENVELOPE.includes(key)) {
+          this.keys.add(key);
+        }
       }
 
       this.noteServices(value.services);
@@ -128,6 +130,8 @@ export class CaptureRecorder {
     }
   }
 }
+
+const ENVELOPE = ['v', 'type', 'ts', 'id', 'ok', 'error'];
 
 export function pathKey(path: unknown): string | null {
   if (typeof path !== 'string') {

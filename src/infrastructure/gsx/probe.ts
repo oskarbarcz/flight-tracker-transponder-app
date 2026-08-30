@@ -9,7 +9,13 @@ export const UNKNOWN_SERVICE = '__probe_no_such_service__';
 
 export const PROBE_TIMEOUT_MS = 2_000;
 
+export const SUBSCRIBE_ID = 'subscribe';
+
 export type ProbeBody = Record<string, unknown>;
+
+export function subscribeRequest(): ProbeBody {
+  return { v: 1, type: 'subscribe', id: SUBSCRIBE_ID };
+}
 
 export type TypeProbe = {
   type: string;
@@ -23,12 +29,6 @@ export const TYPE_PROBES: TypeProbe[] = [
   { type: 'services.get' },
   { type: 'handler.get' },
   { type: 'gate.list' },
-  { type: 'subscribe', body: { capabilities: ['state', 'services'] } },
-  { type: 'subscribe' },
-  { type: 'hello' },
-  { type: 'ready' },
-  { type: 'ping' },
-  { type: 'get', body: { path: '/services' } },
   { type: 'service.trigger', body: { id: UNKNOWN_SERVICE } },
   { type: 'service.bypass', body: { id: UNKNOWN_SERVICE } },
 ];

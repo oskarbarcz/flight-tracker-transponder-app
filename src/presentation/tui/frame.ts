@@ -5,6 +5,7 @@ import type {
   ServiceAirport,
   StatusSnapshot,
 } from '../../application/status';
+import type { GroundService, ServiceState } from '../../domain/ground-services';
 import { isUpdateAvailable } from '../../domain/release';
 import {
   amber,
@@ -77,6 +78,7 @@ export function renderFrame(input: FrameInput): string[] {
     ...pair(crew(status), currentService(status), width),
     ...pair(transponder(status), comms(status), width),
     ...serviceStatus(status, input.version)(width),
+    ...ground(status, width),
     '',
     ...notices(status, input.version, width),
   ];
@@ -290,6 +292,91 @@ function health(state: ConnectionState, version: string | null): string {
   }
 
   return `[${green('OK')}${suffix}]`;
+}
+
+const SERVICE_LABEL_WIDTH = 11;
+
+const SERVICE_STATES: Record<ServiceState, string> = {
+  requestable: 'READY',
+  requested: 'CALLED',
+  performing: 'RUNNING',
+  completed: 'DONE',
+  bypassed: 'SKIPPED',
+};
+
+const SERVICE_COLOURS: Record<ServiceState, Style> = {
+  requestable: dim,
+  requested: cyan,
+  performing: green,
+  completed: grey,
+  bypassed: amber,
+};
+
+function ground(status: StatusSnapshot, width: number): string[] {
+  if (status.groundServices.length === 0) {
+    return [];
+  }
+
+  return box('6 GROUND', (inner) => [
+    ...standRow(status),
+    ...status.groundServices.map((service) => serviceRow(service, inner)),
+  ])(width);
+}
+
+function standRow(status: StatusSnapshot): string[] {
+  const { airport: icao, parking } = status.stand;
+  const stand = parking === null ? null : (parking.split('|').at(-1) ?? null);
+  const parts = [icao, stand].filter((part): part is string => part !== null);
+
+  return parts.length === 0 ? [] : [dim(parts.join(' · '))];
+}
+
+function serviceRow(service: GroundService, inner: number): string {
+  const name = service.id.padEnd(SERVICE_LABEL_WIDTH);
+  const state = serviceState(service.state);
+  const detail = serviceDetail(service);
+  const head = `${name}${state}`;
+
+  return detail === ''
+    ? head
+    : `${head}  ${toVisibleWidth(dim(detail), Math.max(inner - visibleWidth(head) - 3, 0))}`;
+}
+
+function serviceState(state: ServiceState | null): string {
+  if (state === null) {
+    return `[${dim('—')}]`.padEnd(SERVICE_LABEL_WIDTH + 9);
+  }
+
+  const colour = SERVICE_COLOURS[state];
+  const label = SERVICE_STATES[state];
+
+  return `[${colour(label)}]${' '.repeat(Math.max(9 - label.length, 0))}`;
+}
+
+function serviceDetail(service: GroundService): string {
+  const parts: string[] = [];
+
+  if (service.passengers !== null) {
+    parts.push(`${service.passengers.done}/${service.passengers.total} pax`);
+  }
+
+  if (service.fuel !== null) {
+    parts.push(`${service.fuel.loaded} ${service.fuel.unit} loaded`);
+  }
+
+  if (service.bagsPercent !== null) {
+    parts.push(`bags ${service.bagsPercent}%`);
+  }
+
+  for (const hold of service.cargo) {
+    parts.push(`${hold.hold} ${hold.done}/${hold.total} ${hold.unit}`);
+  }
+
+  if (parts.length === 0 && service.phase !== null) {
+    parts.push(service.phase);
+  }
+
+  return parts.join(' · ');
 }
 
 const LABEL_WIDTH = 10;

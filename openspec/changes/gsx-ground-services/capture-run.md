@@ -1,5 +1,9 @@
 # Running the GSX capture
 
+> **Round two is done.** The protocol is understood and the app is built. What remains is the
+> confirmation run in "Confirming the finished integration" at the bottom — not another
+> capture.
+
 One run on the simulator PC produces the recording every later task is tested against. It is
 worth doing carefully, because the point is not to need a second one.
 
@@ -88,3 +92,27 @@ which message came immediately before the first snapshot.
 deliberate for this mode. Check GSX is running, and that its remote server is enabled:
 GSX Settings → Network → Remote control server (on by default since 4.0.7). The Network tab
 also shows the address and port GSX is actually listening on.
+
+
+## Confirming the finished integration (task 7.3)
+
+Run the **test-build** workflow again and take the new executable. This time run it normally,
+with no flags:
+
+```
+mypreflight-transponder.exe
+```
+
+Sign in, start a flight, and work a turnaround with GSX. A sixth dashboard section titled
+**6 GROUND** should appear once a service is actually running, showing the stand and a line
+per service.
+
+What to check, and report back:
+
+- The section appears when boarding starts, and is absent before anything runs.
+- Passenger and cargo figures move and match what GSX itself shows.
+- **A refuel**, which no capture has yet covered — `detail.fuel` is the one shape still taken
+  on trust. If the refuel line reads oddly or shows nothing, say so and send the JSONL.
+- A completed service stays reading `[DONE]` rather than reverting once GSX offers it again.
+- Quitting GSX mid-turnaround makes the section disappear without anything reporting a fault,
+  and restarting GSX brings it back on its own within about twenty seconds.

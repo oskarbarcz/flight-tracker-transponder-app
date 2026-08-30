@@ -1,6 +1,14 @@
 import { type CaptureSink, CaptureRecorder } from './capture';
 import { GsxConnection, type SocketOpener } from './connection';
-import { type ProbeOutcome, Prober, ResultWaiter } from './probe';
+import {
+  type ProbeOutcome,
+  PROBE_TIMEOUT_MS,
+  Prober,
+  ResultWaiter,
+  SUBSCRIBE_ID,
+  answerOf,
+  subscribeRequest,
+} from './probe';
 import { formatReport } from './report';
 
 export type CaptureSessionOptions = {
@@ -19,6 +27,7 @@ export class CaptureSession {
   private readonly connection: GsxConnection;
 
   private outcomes: ProbeOutcome[] = [];
+  private subscription: ProbeOutcome | null = null;
 
   constructor(private readonly options: CaptureSessionOptions) {
     this.recorder = new CaptureRecorder(options.sink, options.now);
@@ -35,6 +44,19 @@ export class CaptureSession {
     });
   }
 
+  async subscribe(): Promise<ProbeOutcome> {
+    this.connection.send(subscribeRequest());
+
+    const frame = await this.waiter.wait(
+      SUBSCRIBE_ID,
+      this.options.timeoutMs ?? PROBE_TIMEOUT_MS,
+    );
+
+    this.subscription = { type: 'subscribe', ...answerOf(frame) };
+
+    return this.subscription;
+  }
+
   async probe(): Promise<void> {
     const prober = new Prober(
       (payload) => this.connection.send(payload),
@@ -49,7 +71,10 @@ export class CaptureSession {
     return formatReport({
       file: this.options.file,
       summary: this.recorder.summary(),
-      outcomes: this.outcomes,
+      outcomes:
+        this.subscription === null
+          ? this.outcomes
+          : [this.subscription, ...this.outcomes],
     });
   }
 

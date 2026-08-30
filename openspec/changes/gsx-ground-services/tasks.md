@@ -11,36 +11,36 @@
 - [x] 1.5 Produce a Windows test build and hand it over with instructions: run parked at a
   gate in a throwaway session, through an arrival deboard and a departure turnaround, and a
   second short run started *before* GSX to record the discovery path
-- [ ] 1.6 Commit the returned recording, redacted, as fixtures under
+- [x] 1.6 Commit the returned recording, redacted, as fixtures under
   `src/infrastructure/gsx/fixtures/`; confirm or correct every shape assumed in design.md and
   amend it where the capture disagrees
 
 ## 2. Domain model
 
-- [ ] 2.1 `src/domain/ground-services.ts` — service ids, states, and the per-service progress
+- [x] 2.1 `src/domain/ground-services.ts` — service ids, states, and the per-service progress
   shapes (passengers, baggage percentage, fuel, phase)
-- [ ] 2.2 Map GSX's ids and states to the app's own, dropping unknown services and leaving
+- [x] 2.2 Map GSX's ids and states to the app's own, dropping unknown services and leaving
   unknown states unstated
-- [ ] 2.3 Read passenger progress from GSX's passenger detail and never from its progress
+- [x] 2.3 Read passenger progress from GSX's passenger detail and never from its progress
   figure; cover the 181/181-against-181/186 case explicitly
-- [ ] 2.4 `Turnaround` — retain the highest state each service reached, reset on leaving the
+- [x] 2.4 `Turnaround` — retain the highest state each service reached, reset on leaving the
   ground or on a change of current flight
-- [ ] 2.5 Colocated specs for 2.1–2.4, driven from the task 1 fixtures
+- [x] 2.5 Colocated specs for 2.1–2.4, driven from the task 1 fixtures
 
 ## 3. GSX client
 
-- [ ] 3.1 Frame decoding: `hello`, `snapshot`, `patch`, `result`, with malformed frames
+- [x] 3.1 Frame decoding: `hello`, `snapshot`, `patch`, `result`, with malformed frames
   discarded rather than thrown
-- [ ] 3.2 Flat state — a patch replaces one top-level key outright; a null or absent value
+- [x] 3.2 Flat state — a patch replaces one top-level key outright; a null or absent value
   deletes it. Assert that a withdrawn service disappears
-- [ ] 3.3 Discard `handlerData` on receipt, before anything retains it; log no frame payload
-- [ ] 3.4 Capability negotiation from `hello`: distinguish *not connected* from *connected but
+- [x] 3.3 Discard `handlerData` on receipt, before anything retains it; log no frame payload
+- [x] 3.4 Capability negotiation from `hello`: distinguish *not connected* from *connected but
   cannot supply ground services*
-- [ ] 3.5 Connection machine — searching / handshake / connected / unsupported, with the fast
+- [x] 3.5 Connection machine — searching / handshake / connected / unsupported, with the fast
   first retry decaying to the 20 s steady interval
-- [ ] 3.6 Reconnection: adopt the snapshot GSX sends on reconnect, and do not report GSX as
+- [x] 3.6 Reconnection: adopt the snapshot GSX sends on reconnect, and do not report GSX as
   absent while an engine restart is in flight
-- [ ] 3.7 Colocated specs replaying the task 1 recording end to end, including the
+- [x] 3.7 Colocated specs replaying the task 1 recording end to end, including the
   start-before-GSX recording
 
 ## 4. Configuration
@@ -54,28 +54,30 @@
 
 ## 5. Application wiring
 
-- [ ] 5.1 `src/application/ports/ground-services.ts` — the `GroundServicesSource` port
-- [ ] 5.2 `src/application/ground-services.feed.ts`, modelled on `position.feed.ts`
-- [ ] 5.3 Feed the turnaround reset from the sim sample's on-ground state and from the current
+- [x] 5.1 `src/application/ports/ground-services.ts` — the `GroundServicesSource` port
+- [x] 5.2 `src/application/ground-services.feed.ts`, modelled on `position.feed.ts`
+- [x] 5.3 Feed the turnaround reset from the sim sample's on-ground state and from the current
   flight
-- [ ] 5.4 Register the feed with `Supervisor` in `src/main.ts`, and confirm
+- [x] 5.4 Register the feed with `Supervisor` in `src/main.ts`, and confirm
   `src/architecture.spec.ts` still passes
-- [ ] 5.5 Extend `src/integration/stub-services.ts` and the end-to-end spec with a GSX stub
+- [x] 5.5 Extend `src/integration/stub-services.ts` and the end-to-end spec with a GSX stub
 
 ## 6. Dashboard
 
-- [ ] 6.1 Carry ground-service state on `StatusRegistry` / `StatusSnapshot`
-- [ ] 6.2 Render the section in `src/presentation/tui/frame.ts` — one line per service, name,
+- [x] 6.1 Carry ground-service state on `StatusRegistry` / `StatusSnapshot`
+- [x] 6.2 Render the section in `src/presentation/tui/frame.ts` — one line per service, name,
   state, and progress where there is one; omitted entirely when there is nothing to show
-- [ ] 6.3 Decide from the task 1 capture whether the stand and handling operator earn a line
-- [ ] 6.4 Hold to the frame's existing rules: exact width, minimum width, no colour, Windows
+- [x] 6.3 Decide from the task 1 capture whether the stand and handling operator earn a line
+  — stand yes (real data, useful); operator no (never populated in the capture), though it stays
+  in the domain model
+- [x] 6.4 Hold to the frame's existing rules: exact width, minimum width, no colour, Windows
   console box drawing, state distinguishable without colour
-- [ ] 6.5 Extend the frame and preview specs, and check `npm run preview`
+- [x] 6.5 Extend the frame and preview specs, and check `npm run preview`
 
 ## 7. Close out
 
-- [ ] 7.1 `npm run lint:ci`, `npm run typecheck`, `npm test`
-- [ ] 7.2 README: what the GSX integration does, that it is optional, and the minimum GSX
+- [x] 7.1 `npm run lint:ci`, `npm run typecheck`, `npm test`
+- [x] 7.2 README: what the GSX integration does, that it is optional, and the minimum GSX
   version implied by the capability the app needs
 - [ ] 7.3 Second Windows test build for a live confirmation run — a real turnaround with the
   dashboard open
